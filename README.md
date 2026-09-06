@@ -1,166 +1,338 @@
-<br /><br />
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logos/dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="logos/light.png">
+    <img src="logos/dark.png" alt="one flow" width="340" />
+  </picture>
+</p>
 
 <p align="center">
-<a href="https://plane.so">
-  <img src="https://media.docs.plane.so/logo/plane_github_readme.png" alt="Plane Logo" width="400">
-</a>
+  <b>intelligent, streamlined project management & workflow automation</b><br>
+  <i>part of the onebiz platform ecosystem</i>
 </p>
-<p align="center"><b>Modern project management for all teams</b></p>
 
 <p align="center">
-    <a href="https://plane.so/"><b>Website</b></a> •
-    <a href="https://forum.plane.so"><b>Forum</b></a> •
-    <a href="https://x.com/planepowers"><b>X</b></a> •
-    <a href="https://docs.plane.so/"><b>Documentation</b></a>
+  <img src="https://img.shields.io/badge/version-3.1.4-E81B5B?style=flat-square" alt="Version 3.1.4" />
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-171717?style=flat-square" alt="License AGPLv3" />
+  <img src="https://img.shields.io/badge/brand_kit-onebiz_v2.0-E81B5B?style=flat-square" alt="onebiz Brand Kit" />
+  <img src="https://img.shields.io/badge/docker-compose-0db7ed?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/react_router-CA4245?style=flat-square&logo=react-router&logoColor=white" alt="React Router" />
+  <img src="https://img.shields.io/badge/django-092E20?style=flat-square&logo=django&logoColor=white" alt="Django" />
 </p>
 
-<p>
-    <a href="https://app.plane.so/#gh-light-mode-only" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-top.webp"
-        alt="Plane Screens"
-        width="100%"
-      />
-    </a>
-</p>
+---
 
-Meet [Plane](https://plane.so/), an open-source project management tool to track issues, run ~sprints~ cycles, and manage product roadmaps without the chaos of managing the tool itself. 🧘‍♀️
+## Table of Contents
 
-> Plane is evolving every day. Your suggestions, ideas, and reported bugs help us immensely. Do not hesitate to join in the conversation on [Forum](https://forum.plane.so) or raise a GitHub issue. We read everything and respond to most.
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [System Architecture](#-system-architecture)
+- [Server Prerequisites](#-server-prerequisites)
+- [Production Server Installation](#-production-server-installation)
+  - [1. Clone Repository](#1-clone-repository)
+  - [2. Environment Configuration](#2-environment-configuration)
+  - [3. Keycloak / OneSSO Authentication](#3-keycloak--onesso-authentication)
+  - [4. Deploy Containers](#4-deploy-containers)
+  - [5. Verify Services & Health Checks](#5-verify-services--health-checks)
+- [Local Development Setup](#-local-development-setup)
+- [Environment Variables Reference](#-environment-variables-reference)
+- [Operational Commands & Maintenance](#-operational-commands--maintenance)
+- [Brand Identity & Design System](#-brand-identity--design-system)
+- [License](#-license)
 
-## 🚀 Installation
+---
 
-Getting started with Plane is simple. Choose the setup that works best for you:
+## 🚀 Overview
 
-- **Plane Cloud**
-  Sign up for a free account on [Plane Cloud](https://app.plane.so)—it's the fastest way to get up and running without worrying about infrastructure.
+**one flow** is a modern, extensible project management and issue-tracking platform built for high-velocity software engineering teams. Designed around speed, clarity, and visual aesthetics, one flow provides powerful planning primitives without unnecessary overhead.
 
-- **Self-host Plane**
-  Prefer full control over your data and infrastructure? Install and run Plane on your own servers. Follow our detailed [deployment guides](https://developers.plane.so/self-hosting/overview) to get started.
+### Why one flow?
 
-| Installation methods | Docs link                                                                                                                                                                               |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Docker               | [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://developers.plane.so/self-hosting/methods/docker-compose)         |
-| Kubernetes           | [![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=for-the-badge&logo=kubernetes&logoColor=white)](https://developers.plane.so/self-hosting/methods/kubernetes) |
-| Managed hosting      | [<img alt="Deploy with Zenith" src="https://cdn.zenith.hosting/buttons/deploy-with-zenith.svg" height="40">](https://zenith.hosting/host/plane) |
+- **Zero Clutter**: Clean, purposeful interfaces focused on task execution and milestone delivery.
+- **Brand Identity**: Styled natively with the **onebiz design system** (Rose/Coral `#E81B5B` primary accent, dark/light themes).
+- **Self-Hosted & Independent**: Full control over your data, database, object storage, and user credentials.
+- **Enterprise-Ready SSO**: Out-of-the-box OAuth2 and OIDC integration with Keycloak, Google, GitHub, and custom identity providers.
 
-`Instance admins` can configure instance settings with [God mode](https://developers.plane.so/self-hosting/govern/instance-admin).
+---
 
-## 🌟 Features
+## 🌟 Key Features
 
-- **Work Items**
-  Efficiently create and manage tasks with a robust rich text editor that supports file uploads. Enhance organization and tracking by adding sub-properties and referencing related issues.
+| Feature | Description |
+| :--- | :--- |
+| **Work Items** | Comprehensive task tracking with markdown descriptions, sub-properties, attachments, and custom attributes. |
+| **Flexible Layouts** | Instant toggling between **Board** (default), **List**, **Calendar**, and **Spreadsheet** views. |
+| **Cycles** | Structured sprints with automated rollover, burn-down velocity graphs, and completion analytics. |
+| **Modules** | Subdivide large deliverables into cross-functional milestones with individual ownership and timelines. |
+| **Views & Filters** | Global and project-level custom filters. Save, share, and export segmented task queries. |
+| **Pages & Docs** | Collaborative rich-text editor with AI-assisted drafting, live components, and embedded tasks. |
+| **Analytics Dashboard** | Live progress metrics, workload distribution across team members, and priority heatmaps. |
+| **Dual Theme Engine** | High-contrast dark and light modes with persistent user preference storage. |
 
-- **Cycles**
-  Maintain your team’s momentum with Cycles. Track progress effortlessly using burn-down charts and other insightful tools.
+---
 
-- **Modules**
-  Simplify complex projects by dividing them into smaller, manageable modules.
+## 🏛️ System Architecture
 
-- **Views**
-  Customize your workflow by creating filters to display only the most relevant issues. Save and share these views with ease.
+one flow runs as an orchestrated multi-service architecture via Docker Compose:
 
-- **Pages**
-  Capture and organize ideas using Plane Pages, complete with AI capabilities and a rich text editor. Format text, insert images, add hyperlinks, or convert your notes into actionable items.
+```
+                          ┌──────────────────────────┐
+                          │   Internet / Clients     │
+                          └─────────────┬────────────┘
+                                        │  Ports 80 / 443
+                                        ▼
+                          ┌──────────────────────────┐
+                          │   Caddy / Reverse Proxy  │
+                          └──────┬────────────┬──────┘
+                                 │            │
+             ┌───────────────────┘            └───────────────────┐
+             ▼                                                    ▼
+┌──────────────────────────┐                             ┌──────────────────────────┐
+│        web               │                             │         api              │
+│  React Router + Nginx    │                             │  Django REST Framework   │
+│  Port 3000 (Internal)    │                             │  Port 8000 (Internal)    │
+└────────────┬─────────────┘                             └────────────┬─────────────┘
+             │                                                        │
+             │           ┌─────────────────┬──────────────────────────┤
+             │           │                 │                          │
+             ▼           ▼                 ▼                          ▼
+     ┌──────────────┐ ┌──────────────┐ ┌──────────────┐      ┌──────────────┐
+     │  live engine │ │ worker/beat  │ │  PostgreSQL  │      │ Valkey/Redis │
+     │  WebSocket   │ │ Celery Task  │ │  Database    │      │ Cache/Queue  │
+     └──────────────┘ └──────────────┘ └──────────────┘      └──────────────┘
+                                               │                      │
+                                               ▼                      ▼
+                                        ┌──────────────┐      ┌──────────────┐
+                                        │ MinIO S3     │      │ RabbitMQ     │
+                                        │ Object Store │      │ Message Bus  │
+                                        └──────────────┘      └──────────────┘
+```
 
-- **Analytics**
-  Access real-time insights across all your Plane data. Visualize trends, remove blockers, and keep your projects moving forward.
+---
 
-## 🛠️ Local development
+## 💻 Server Prerequisites
 
-See [CONTRIBUTING](./CONTRIBUTING.md)
+Before installing one flow on your production server, verify the following requirements:
 
-## ⚙️ Built with
+| Component | Minimum Specification | Recommended Specification |
+| :--- | :--- | :--- |
+| **Operating System** | Ubuntu 22.04 / 24.04 LTS | Ubuntu 24.04 LTS (x86_64 or ARM64) |
+| **Processor (CPU)** | 2 vCPU cores | 4+ vCPU cores |
+| **Memory (RAM)** | 4 GB RAM | 8+ GB RAM (with 2GB Swap) |
+| **Disk Storage** | 25 GB Available SSD | 50+ GB SSD |
+| **Network** | Public IP with Ports `80` and `443` open | Static IP + DNS A-Record configured |
+| **Software** | Docker Engine 24.0+ & Docker Compose v2 | Docker Engine 26.0+ |
 
-[![React Router](https://img.shields.io/badge/-React%20Router-CA4245?logo=react-router&style=for-the-badge&logoColor=white)](https://reactrouter.com/)
-[![Django](https://img.shields.io/badge/Django-092E20?style=for-the-badge&logo=django&logoColor=green)](https://www.djangoproject.com/)
-[![Node JS](https://img.shields.io/badge/node.js-339933?style=for-the-badge&logo=Node.js&logoColor=white)](https://nodejs.org/en)
+---
 
-## 📸 Screenshots
+## 🛠️ Production Server Installation
 
-  <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-work-items.webp"
-        alt="Plane Views"
-        width="100%"
-      />
-    </a>
-  </p>
-  <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-cycles.webp"
-        width="100%"
-      />
-    </a>
-  </p>
-  <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-modules.webp"
-        alt="Plane Cycles and Modules"
-        width="100%"
-      />
-    </a>
-  </p>
-  <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-views.webp"
-        alt="Plane Analytics"
-        width="100%"
-      />
-    </a>
-  </p>
-   <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-analytics.webp"
-        alt="Plane Pages"
-        width="100%"
-      />
-    </a>
-  </p>
-</p>
+### 1. Clone Repository
 
-## 📝 Documentation
+SSH into your target host and clone the repository:
 
-Explore Plane's [product documentation](https://docs.plane.so/) and [developer documentation](https://developers.plane.so/) to learn about features, setup, and usage.
+```bash
+cd /home/ubuntu
+git clone https://github.com/sohan20051519/oneflow.git oneflow
+cd oneflow
+```
 
-## ❤️ Community
+### 2. Environment Configuration
 
-Join the Plane community on [GitHub Discussions](https://github.com/orgs/makeplane/discussions) and our [Forum](https://forum.plane.so). We follow a [Code of conduct](https://github.com/makeplane/plane/blob/master/CODE_OF_CONDUCT.md) in all our community channels.
+Generate the core environment configuration file:
 
-Feel free to ask questions, report bugs, participate in discussions, share ideas, request features, or showcase your projects. We’d love to hear from you!
+```bash
+cp plane.env.example plane.env
+```
 
-## 🛡️ Security
+Edit `plane.env` to set your instance parameters:
 
-If you discover a security vulnerability in Plane, please report it responsibly instead of opening a public issue. We take all legitimate reports seriously and will investigate them promptly. See [Security policy](https://github.com/makeplane/plane/blob/master/SECURITY.md) for more info.
+```bash
+nano plane.env
+```
 
-To disclose any security issues, please email us at security@plane.so.
+Key environment configurations:
 
-## 🤝 Contributing
+```ini
+# Domain & Protocol
+DOMAIN_NAME=your-domain.com
+WEB_URL=https://your-domain.com
 
-There are many ways you can contribute to Plane:
+# Database (PostgreSQL)
+POSTGRES_DB=oneflow
+POSTGRES_USER=oneflow
+POSTGRES_PASSWORD=generate_a_secure_password_here
 
-- Report [bugs](https://github.com/makeplane/plane/issues/new?assignees=srinivaspendem%2Cpushya22&labels=%F0%9F%90%9Bbug&projects=&template=--bug-report.yaml&title=%5Bbug%5D%3A+) or submit [feature requests](https://github.com/makeplane/plane/issues/new?assignees=srinivaspendem%2Cpushya22&labels=%E2%9C%A8feature&projects=&template=--feature-request.yaml&title=%5Bfeature%5D%3A+).
-- Review the [documentation](https://docs.plane.so/) and submit [pull requests](https://github.com/makeplane/docs) to improve it—whether it's fixing typos or adding new content.
-- Talk or write about Plane or any other ecosystem integration and [let us know](https://forum.plane.so)!
-- Show your support by upvoting [popular feature requests](https://github.com/makeplane/plane/issues).
+# Cache & Message Broker
+REDIS_PASSWORD=generate_a_secure_password_here
+RABBITMQ_DEFAULT_USER=oneflow
+RABBITMQ_DEFAULT_PASS=generate_a_secure_password_here
 
-Please read [CONTRIBUTING.md](https://github.com/makeplane/plane/blob/master/CONTRIBUTING.md) for details on the process for submitting pull requests to us.
+# Object Storage (MinIO)
+AWS_ACCESS_KEY_ID=oneflow-minio-key
+AWS_SECRET_ACCESS_KEY=oneflow-minio-secret-key
+```
 
-### Repo activity
+### 3. Keycloak / OneSSO Authentication
 
-![Plane Repo Activity](https://repobeats.axiom.co/api/embed/2523c6ed2f77c082b7908c33e2ab208981d76c39.svg "Repobeats analytics image")
+one flow includes native support for Keycloak / OneSSO via OAuth2-Proxy. Append your client credentials to `plane.env`:
 
-### We couldn't have done this without you.
+```ini
+# ==========================================
+# Keycloak / OneSSO Configuration
+# ==========================================
+OAUTH2_PROXY_CLIENT_ID=oneflow_client
+OAUTH2_PROXY_CLIENT_SECRET=your_client_secret_here
+OAUTH2_PROXY_COOKIE_SECRET=your_generated_cookie_secret_32bytes=
+OAUTH2_PROXY_OIDC_ISSUER_URL=https://sso.your-domain.com/realms/your-realm
+OAUTH2_PROXY_REDIRECT_URL=https://your-domain.com/oauth2/callback
+```
 
-<a href="https://github.com/makeplane/plane/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=makeplane/plane" />
-</a>
+> **Tip**: Generate a secure 32-byte cookie secret with:
+> ```bash
+> python3 -c 'import os,base64; print(base64.b64encode(os.urandom(32)).decode())'
+> ```
 
-## License
+### 4. Deploy Containers
 
-This project is licensed under the [GNU Affero General Public License v3.0](https://github.com/makeplane/plane/blob/master/LICENSE.txt).
+Launch the container stack with Docker Compose:
+
+```bash
+sudo docker compose up -d --build
+```
+
+Docker will pull pre-built dependencies, build the frontend web image, run database migrations, and start all backend services in the background.
+
+### 5. Verify Services & Health Checks
+
+Verify that all services are healthy and active:
+
+```bash
+sudo docker compose ps
+```
+
+Expected output:
+```
+NAME           IMAGE                    COMMAND                  SERVICE             STATUS
+oneflow-api    makeplane/backend-...    "/docker-entrypoint…"    api                 Up (healthy)
+oneflow-db     postgres:15.7-alpine     "docker-entrypoint.s…"   plane-db            Up (healthy)
+oneflow-live   makeplane/live-...       "node ./dist/index.js"   live                Up (healthy)
+oneflow-redis  valkey/valkey:7.2.11     "valkey-server"          plane-redis         Up (healthy)
+oneflow-web    plane-frontend:oneflow   "/docker-entrypoint…"    web                 Up (healthy)
+oneflow-proxy  caddy:latest             "caddy run"              proxy               Up (healthy)
+```
+
+Test HTTP access:
+```bash
+curl -I http://localhost
+```
+
+---
+
+## 🚀 One-Touch Automated Setup & Startup
+
+one flow features an all-in-one automated deployment script (`setup.sh`) that provisions the environment, generates secrets, launches all Docker containers, and runs automated health checks:
+
+```bash
+./setup.sh
+```
+
+The script automatically executes the following:
+1. **Provisions Environment Files**: Generates all required `.env` and `plane.env` files across services.
+2. **Generates Cryptographic Secrets**: Configures high-entropy Django `SECRET_KEY`, machine signatures, and access tokens.
+3. **Synchronizes Docker Images**: Automatically detects the Docker runtime and ensures `plane-frontend:oneflow` is available.
+4. **Orchestrates Containers**: Launches all 21 microservices via Docker Compose in detached mode.
+5. **Performs Health Checks**: Continuously polls services until the database, API, and web gateways respond healthy.
+6. **Displays Live Dashboard**: Provides access URLs (`http://localhost`, `http://13.234.29.32`) and service management shortcuts.
+
+---
+
+## 💻 Local Development Workflow
+
+If you are developing components individually on your workstation without Docker Compose:
+
+1. **Run Configuration**:
+   ```bash
+   ./setup.sh
+   ```
+
+2. **Start Backend Dependencies**:
+   ```bash
+   docker compose -f docker-compose-local.yml up -d
+   ```
+
+3. **Start Web Application**:
+   ```bash
+   pnpm dev
+   ```
+
+4. Open your browser at `http://localhost:3000`.
+
+---
+
+## ⚙️ Environment Variables Reference
+
+| Variable | Default / Example | Purpose |
+| :--- | :--- | :--- |
+| `DOMAIN_NAME` | `localhost` | Primary domain name serving one flow. |
+| `WEB_URL` | `http://localhost:3000` | Full base URL used for email links and CORS. |
+| `SECRET_KEY` | *(50-char random)* | Cryptographic signing key for Django auth. |
+| `POSTGRES_DB` | `oneflow` | PostgreSQL database catalog name. |
+| `POSTGRES_USER` | `oneflow` | Database master user. |
+| `POSTGRES_PASSWORD` | *(secure password)* | Database master authentication token. |
+| `REDIS_HOST` | `plane-redis` | In-memory cache & pub/sub broker hostname. |
+| `AWS_S3_ENDPOINT_URL` | `http://plane-minio:9090` | Object storage bucket endpoint. |
+| `ENABLE_SIGNUP` | `1` | Allow public user account creation (`1` or `0`). |
+
+---
+
+## 🔧 Operational Commands & Maintenance
+
+### Inspect Logs in Real-Time
+```bash
+# View aggregated stream
+sudo docker compose logs -f
+
+# View specific service (e.g. web or api)
+sudo docker compose logs -f web
+sudo docker compose logs -f api
+```
+
+### Restart Application Stack
+```bash
+sudo docker compose restart
+```
+
+### Rebuild After Code Changes
+```bash
+# Rebuild web frontend image
+sudo docker build -f apps/web/Dockerfile.web -t plane-frontend:oneflow .
+
+# Recreate web container seamlessly
+sudo docker compose up -d --no-deps --force-recreate web
+```
+
+### Clean Docker Build Cache
+If server storage drops below 2 GB:
+```bash
+sudo docker builder prune -a -f
+```
+
+---
+
+## 🎨 Brand Identity & Design System
+
+one flow adheres strictly to the **onebiz design system (v2.0)**:
+
+- **Naming**: Always lowercase in prose (**one flow**, **onebiz**). Technical identifier: `oneflow`.
+- **Primary Brand Color**: `hsl(352, 82%, 52%)` / `#E81B5B` (Rose / Coral).
+- **Typography**: Inter (UI font) · JetBrains Mono (Code & Technical).
+- **Corner Radius**: Buttons `8px` (`rounded-lg`) · Cards `12px` (`rounded-xl`) · Inputs `6px` (`rounded-md`).
+- **Dark Mode**: Native `class="dark"` with rich neutral surfaces (`#171717`, `#1C1C1C`).
+
+---
+
+## 📄 License
+
+This software is distributed under the **GNU Affero General Public License v3.0** (AGPL-3.0). See [LICENSE.txt](./LICENSE.txt) for full terms.
+
+*Maintained by Sohan A · © 2026 one flow · Part of the onebiz Platform.*

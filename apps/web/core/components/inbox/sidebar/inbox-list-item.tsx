@@ -126,7 +126,7 @@ export const InboxIssueListItem = observer(function InboxIssueListItem(props: In
               )}
             </div>
             {/* created by */}
-            {createdByDetails && (createdByDetails.email?.includes("intake@plane.so") || createdByDetails.email?.includes("intake@oneflow.app")) ? (
+            {createdByDetails && createdByDetails.email?.includes("intake@oneflow.app") ? (
               <Avatar src={getFileURL("")} name={"OneFlow"} size="md" showTooltip />
             ) : createdByDetails ? (
               <ButtonAvatars showTooltip={false} userIds={createdByDetails?.id} />

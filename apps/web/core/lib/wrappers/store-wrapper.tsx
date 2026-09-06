@@ -76,8 +76,8 @@ function StoreWrapper(props: TStoreWrapper) {
     const resolvedInitialTheme = localTheme || serverTheme || "light";
     setTheme(resolvedInitialTheme);
 
-    // If there is a local theme differing from server theme, sync to server
-    if (localTheme && userProfile && serverTheme !== localTheme) {
+    // If there is a local theme differing from server theme, sync to server (only if authenticated)
+    if (localTheme && userProfile?.id && serverTheme !== localTheme) {
       void updateUserTheme({ theme: localTheme });
     }
 

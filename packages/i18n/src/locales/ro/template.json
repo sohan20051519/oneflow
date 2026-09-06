@@ -162,7 +162,7 @@
           },
           "website": {
             "label": "URL site web",
-            "placeholder": "https://plane.so",
+            "placeholder": "https://oneflow.app",
             "validation": {
               "invalid": "URL invalid",
               "maxLength": "URL-ul trebuie să fie mai mic de 800 de caractere"
@@ -170,7 +170,7 @@
           },
           "company_name": {
             "label": "Numele companiei",
-            "placeholder": "Plane",
+            "placeholder": "one flow",
             "validation": {
               "required": "Numele companiei este obligatoriu",
               "maxLength": "Numele companiei trebuie să fie mai mic de 255 de caractere"
@@ -178,7 +178,7 @@
           },
           "contact_email": {
             "label": "Email de suport",
-            "placeholder": "help@plane.so",
+            "placeholder": "help@oneflow.app",
             "validation": {
               "invalid": "Adresa email-ului este invalidă",
               "maxLength": "Adresa email-ului trebuie să fie mai mică de 255 de caractere"

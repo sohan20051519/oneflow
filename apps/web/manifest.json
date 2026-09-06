@@ -4,9 +4,9 @@
   "display": "standalone",
   "scope": "/",
   "start_url": "/",
-  "name": "OneFlow | Streamlined Project & Product Management",
-  "short_name": "OneFlow",
-  "description": "OneFlow streamlines software and product management for modern teams.",
+  "name": "one flow | Streamlined Project & Product Management",
+  "short_name": "one flow",
+  "description": "one flow streamlines software and product management for modern teams.",
   "icons": [
     {
       "src": "/icon-192x192.png",

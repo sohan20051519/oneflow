@@ -162,7 +162,7 @@
           },
           "website": {
             "label": "Website-URL",
-            "placeholder": "https://plane.so",
+            "placeholder": "https://oneflow.app",
             "validation": {
               "invalid": "Ungültige URL",
               "maxLength": "URL sollte weniger als 800 Zeichen enthalten"
@@ -170,7 +170,7 @@
           },
           "company_name": {
             "label": "Unternehmensname",
-            "placeholder": "Plane",
+            "placeholder": "one flow",
             "validation": {
               "required": "Unternehmensname ist erforderlich",
               "maxLength": "Unternehmensname sollte weniger als 255 Zeichen enthalten"
@@ -178,7 +178,7 @@
           },
           "contact_email": {
             "label": "Support-E-Mail",
-            "placeholder": "help@plane.so",
+            "placeholder": "help@oneflow.app",
             "validation": {
               "invalid": "Ungültige E-Mail-Adresse",
               "maxLength": "Support-E-Mail sollte weniger als 255 Zeichen enthalten"

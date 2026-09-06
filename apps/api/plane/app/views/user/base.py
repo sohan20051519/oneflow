@@ -414,14 +414,22 @@ class AccountEndpoint(BaseAPIView):
 
 
 class ProfileEndpoint(BaseAPIView):
+    permission_classes = [
+        AllowAny,
+    ]
+
     @method_decorator(cache_control(private=True, max_age=12))
     @method_decorator(vary_on_cookie)
     def get(self, request):
+        if not request.user.is_authenticated:
+            return Response(status=status.HTTP_401_UNAUTHORIZED)
         profile = Profile.objects.get(user=request.user)
         serializer = ProfileSerializer(profile)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def patch(self, request):
+        if not request.user.is_authenticated:
+            return Response({"detail": "User not authenticated"}, status=status.HTTP_200_OK)
         profile = Profile.objects.get(user=request.user)
         serializer = ProfileSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():

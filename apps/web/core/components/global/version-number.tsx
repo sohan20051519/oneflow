@@ -11,7 +11,7 @@ import packageJson from "package.json";
 export function PlaneVersionNumber() {
   return (
     <span className="text-xs text-muted-foreground font-mono">
-      OneFlow v{packageJson.version}
+      one flow v{packageJson.version}
     </span>
   );
 }

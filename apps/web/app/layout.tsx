@@ -25,28 +25,28 @@ import icon512 from "@/app/assets/icons/icon-512x512.png?url";
 import { AppProvider } from "./provider";
 
 export const meta = () => [
-  { title: "OneFlow | Streamlined Project & Product Management" },
+  { title: "one flow | Streamlined Project & Product Management" },
   { name: "description", content: SITE_DESCRIPTION },
   {
     name: "keywords",
     content:
-      "oneflow, project management, agile, issue tracking, cycles, modules, product roadmap, collaboration",
+      "one flow, oneflow, project management, agile, issue tracking, cycles, modules, product roadmap, collaboration",
   },
   {
     name: "viewport",
     content:
       "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
   },
-  { property: "og:title", content: "OneFlow | Streamlined Project & Product Management" },
+  { property: "og:title", content: "one flow | Streamlined Project & Product Management" },
   {
     property: "og:description",
-    content: "Streamlined work and product management platform to accelerate delivery with oneflow.",
+    content: "Streamlined work and product management platform to accelerate delivery with one flow.",
   },
   { property: "og:url", content: "https://oneflow.app/" },
   { property: "og:image", content: "/og-image.png" },
   { property: "og:image:width", content: "1200" },
   { property: "og:image:height", content: "630" },
-  { property: "og:image:alt", content: "OneFlow - Modern project management" },
+  { property: "og:image:alt", content: "one flow - Modern project management" },
   { name: "twitter:card", content: "summary_large_image" },
   { name: "twitter:image", content: "/og-image.png" },
   { name: "twitter:image:width", content: "1200" },

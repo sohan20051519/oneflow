@@ -28,7 +28,9 @@ export abstract class APIService {
       (error) => {
         if (error.response && error.response.status === 401) {
           const currentPath = window.location.pathname;
-          window.location.replace(`/${currentPath ? `?next_path=${currentPath}` : ``}`);
+          if (currentPath && currentPath !== "/") {
+            window.location.replace(`/?next_path=${currentPath}`);
+          }
         }
         return Promise.reject(error);
       }

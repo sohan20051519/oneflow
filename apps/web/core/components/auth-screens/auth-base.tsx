@@ -204,11 +204,6 @@ export const AuthBase = observer(function AuthBase({ authType }: AuthBaseProps) 
             <h1 className="text-lg font-semibold tracking-tight text-primary lowercase">
               {mode === EAuthModes.SIGN_IN ? "welcome back" : "create your account"}
             </h1>
-            <p className="text-xs text-secondary lowercase">
-              {mode === EAuthModes.SIGN_IN
-                ? "enter your credentials to access your workspace"
-                : "get started in just a few seconds"}
-            </p>
           </div>
 
           {/* Alert Message */}
@@ -354,6 +349,35 @@ export const AuthBase = observer(function AuthBase({ authType }: AuthBaseProps) 
               )}
             </button>
           </form>
+
+          {/* Divider */}
+          <div className="relative my-0.5 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-subtle" />
+            </div>
+            <span className="relative bg-surface-1 px-2 text-xs text-secondary lowercase">
+              or
+            </span>
+          </div>
+
+          {/* Continue with OneSSO */}
+          <a
+            href={`/auth/oidc/${nextPath ? `?next_path=${nextPath}` : ""}`}
+            className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-subtle bg-surface-2 text-sm font-medium text-primary shadow-xs transition-all hover:bg-surface-3 lowercase"
+          >
+            <svg
+              className="size-4 text-accent-primary"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+            </svg>
+            continue with onesso
+          </a>
 
           {/* Bottom Switch Link */}
           <div className="text-center text-xs text-secondary lowercase">
