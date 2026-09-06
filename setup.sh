@@ -98,7 +98,8 @@ box_row() {
     local stripped
     stripped=$(strip_ansi "$content")
     local visual_len=${#stripped}
-    local pad_len=$(( width - visual_len ))
+    local inner_width=$(( width - 4 ))
+    local pad_len=$(( inner_width - visual_len ))
     if [ $pad_len -lt 0 ]; then
         pad_len=0
     fi
@@ -376,10 +377,13 @@ if [ "$SETUP_SUCCESS" = true ]; then
     echo -e " ${CLR_MUTED}All configuration files, containers, and services are up and running.${CLR_RESET}"
     echo ""
 
-    DASH_W=70
-    TITLE=" Application Status: ONLINE "
-    DASH_COUNT=$(( DASH_W + 2 - ${#TITLE} - 1 ))
-    echo -e " ${CLR_PRIMARY}${CLR_BOLD}╭─${TITLE}$(printf "─%.0s" $(seq 1 $DASH_COUNT))╮${CLR_RESET}"
+    DASH_W=74
+    TITLE="APPLICATION STATUS: ONLINE"
+    T_PREFIX="╭─[ ${TITLE} ]"
+    T_PREFIX_LEN=${#T_PREFIX}
+    DASH_COUNT=$(( DASH_W - T_PREFIX_LEN - 1 ))
+    BOT_DASH=$(( DASH_W - 2 ))
+    echo -e " ${CLR_PRIMARY}${T_PREFIX}$(printf "─%.0s" $(seq 1 $DASH_COUNT))╮${CLR_RESET}"
     box_row $DASH_W ""
     box_row $DASH_W "  ${CLR_SUCCESS}${CLR_BOLD}●${CLR_RESET}  ${CLR_BOLD}one flow services are fully deployed and operational!${CLR_RESET}"
     box_row $DASH_W ""
@@ -397,7 +401,7 @@ if [ "$SETUP_SUCCESS" = true ]; then
     box_row $DASH_W "     ${CLR_TEXT}Restart:${CLR_RESET}    ${CLR_MUTED}${DOCKER_CMD} compose restart${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}Stop:${CLR_RESET}       ${CLR_MUTED}${DOCKER_CMD} compose down${CLR_RESET}"
     box_row $DASH_W ""
-    echo -e " ${CLR_PRIMARY}╰$(printf "─%.0s" $(seq 1 $((DASH_W + 2))))╯${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}╰$(printf "─%.0s" $(seq 1 $BOT_DASH))╯${CLR_RESET}"
     echo ""
     echo -e " ${CLR_MUTED}Documentation & Support:${CLR_RESET} ${CLR_PRIMARY}https://github.com/sohan20051519/oneflow${CLR_RESET}"
     echo ""

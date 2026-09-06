@@ -162,8 +162,8 @@ class TUIState:
     def add_activity(self, status: str, text: str):
         with self.lock:
             self.recent_activity.append((status, text))
-            if len(self.recent_activity) > 4:
-                self.recent_activity = self.recent_activity[-4:]
+            if len(self.recent_activity) > 50:
+                self.recent_activity = self.recent_activity[-50:]
 
     def log(self, tag: str, message: str):
         now = datetime.datetime.now().strftime("%H:%M:%S")
@@ -175,11 +175,15 @@ class TUIState:
     def render(self) -> str:
         cols, lines = shutil.get_terminal_size((120, 35))
         
-        # Responsive Layout Calculation
-        use_split = cols >= 120
+        # Responsive Layout Calculation - Full Screen Geometry
+        use_split = cols >= 110
         left_w = 70 if use_split else min(cols - 4, 70)
         gap = 2
-        right_w = max(42, cols - left_w - gap - 4) if use_split else 0
+        right_w = max(40, cols - left_w - gap - 3) if use_split else 0
+
+        # Full-Screen Dynamic Canvas Height
+        # Leaves safe margin so terminal never scrolls during redrawing
+        target_height = max(26, lines - 2)
 
         with self.lock:
             prog = self.progress
@@ -190,7 +194,7 @@ class TUIState:
             logs_snapshot = list(self.logs)
 
         # -----------------------------------------------------------------
-        # LEFT COLUMN CONSTRUCTION
+        # LEFT COLUMN CONSTRUCTION (Fills target_height)
         # -----------------------------------------------------------------
         left_sections = []
 
@@ -218,7 +222,10 @@ class TUIState:
         ]
         left_sections.extend(build_box(left_w, "DEPLOYMENT PROGRESS", prog_lines))
 
-        # 3. Pipeline Steps & Activity Box (12 lines)
+        # 3. Pipeline Steps & Activity Box (Expands to fill remaining target_height)
+        pipe_box_height = max(13, target_height - len(left_sections))
+        avail_pipe_content_rows = pipe_box_height - 2
+        
         pipe_lines = []
         for i, sname in enumerate(self.step_names):
             st = statuses[i]
@@ -239,10 +246,13 @@ class TUIState:
         pipe_lines.append(f"{CLR_DARK}{'─' * (left_w - 4)}{CLR_RESET}")
         pipe_lines.append(f"{CLR_MUTED}{CLR_BOLD}Latest Milestones:{CLR_RESET}")
         
+        # Header items take 7 lines (5 steps + 1 divider + 1 label)
+        remaining_slots = max(1, avail_pipe_content_rows - 7)
         if not activity:
             pipe_lines.append(f" {CLR_DARK}· Preparing deployment environment...{CLR_RESET}")
         else:
-            for act_st, act_txt in activity[-3:]:
+            visible_act = activity[-remaining_slots:]
+            for act_st, act_txt in visible_act:
                 if act_st == "ok":
                     icon = f"{CLR_SUCCESS}✓{CLR_RESET}"
                 elif act_st == "info":
@@ -253,10 +263,13 @@ class TUIState:
                     icon = f"{CLR_DANGER}✗{CLR_RESET}"
                 pipe_lines.append(f"{icon} {CLR_TEXT}{act_txt}{CLR_RESET}")
 
+        while len(pipe_lines) < avail_pipe_content_rows:
+            pipe_lines.append("")
+
         left_sections.extend(build_box(left_w, "PIPELINE EXECUTION", pipe_lines))
 
         # -----------------------------------------------------------------
-        # RIGHT COLUMN CONSTRUCTION (Live Logs)
+        # RIGHT COLUMN CONSTRUCTION (Live Logs - Expands to target_height)
         # -----------------------------------------------------------------
         right_sections = []
         if use_split:
@@ -270,7 +283,7 @@ class TUIState:
                 "health": CLR_CYAN,
             }
 
-            avail_log_rows = len(left_sections) - 2  # Exactly matches left column height!
+            avail_log_rows = target_height - 2
             visible_logs = logs_snapshot[-avail_log_rows:]
             log_lines = []
 
@@ -289,7 +302,7 @@ class TUIState:
         # MERGE COLUMNS WITH PIXEL-PERFECT CLIPPING
         # -----------------------------------------------------------------
         total_rows = max(len(left_sections), len(right_sections))
-        max_drawable_rows = min(total_rows, max(lines - 2, 20))
+        max_drawable_rows = min(total_rows, lines - 1)
         
         output_rows = []
         for r in range(max_drawable_rows):
@@ -630,6 +643,29 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     is_tty = sys.stdout.isatty()
     
+    # Suppress terminal echo on stdin so mouse scrolling and arrow keys
+    # never leak ^[[A / ^[[B escape sequences onto the screen
+    old_termios = None
+    if sys.stdin.isatty():
+        try:
+            import termios
+            old_termios = termios.tcgetattr(sys.stdin.fileno())
+            new_termios = termios.tcgetattr(sys.stdin.fileno())
+            new_termios[3] = new_termios[3] & ~(termios.ECHO | termios.ICANON)
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, new_termios)
+        except Exception:
+            pass
+
+    def drain_stdin():
+        """Silently discard pending keystrokes or scroll wheel events from stdin."""
+        if sys.stdin.isatty():
+            try:
+                import select
+                while select.select([sys.stdin], [], [], 0)[0]:
+                    os.read(sys.stdin.fileno(), 1024)
+            except Exception:
+                pass
+
     # Switch to Alternate Screen Buffer for 100% clean, non-scrolling UI
     if is_tty:
         sys.stdout.write("\033[?1049h\033[H\033[?25l")
@@ -641,6 +677,12 @@ def main():
         if is_tty:
             sys.stdout.write("\033[?1049l\033[?25h\033[0m\n")
             sys.stdout.flush()
+        if old_termios is not None and sys.stdin.isatty():
+            try:
+                import termios
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_termios)
+            except Exception:
+                pass
         sys.exit(0)
 
     signal.signal(signal.SIGINT, on_exit_signal)
@@ -651,6 +693,7 @@ def main():
 
     try:
         while tui.running or worker.is_alive():
+            drain_stdin()
             if is_tty:
                 frame = tui.render()
                 sys.stdout.write(frame)
@@ -658,54 +701,61 @@ def main():
             time.sleep(0.08)
 
         # Final frame
+        drain_stdin()
         if is_tty:
             frame = tui.render()
             sys.stdout.write(frame)
             sys.stdout.flush()
             time.sleep(0.5)
     finally:
-        # Exit Alternate Screen Buffer cleanly
+        # Exit Alternate Screen Buffer cleanly & restore terminal modes
+        drain_stdin()
         if is_tty:
             sys.stdout.write("\033[?1049l\033[?25h\033[0m\n")
             sys.stdout.flush()
+        if old_termios is not None and sys.stdin.isatty():
+            try:
+                import termios
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_termios)
+            except Exception:
+                pass
 
     # Determine domain name dynamically
     app_domain = detect_server_ip(tui.deploy_dir, tui.source_dir)
 
-    # Final Permanent Dashboard (Printed to standard terminal scrollback)
+    # Final Permanent Dashboard (Printed to standard terminal scrollback with pixel-perfect borders)
     print("")
     if tui.setup_success:
         print(f" {CLR_SUCCESS}{CLR_BOLD}✓  one flow has been successfully deployed and started!{CLR_RESET}")
         print(f" {CLR_MUTED}All configuration files, containers, and services are up and running.{CLR_RESET}\n")
 
-        dash_w = 70
-        title = " Application Status: ONLINE "
-        dash_count = max(0, dash_w + 2 - len(title) - 1)
-        
-        print(f" {CLR_PRIMARY}{CLR_BOLD}╭─{title}{'─' * dash_count}╮{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET}{' ' * dash_w} {CLR_PRIMARY}│{CLR_RESET}")
-        
-        row1 = f"  {CLR_SUCCESS}{CLR_BOLD}●{CLR_RESET}  {CLR_BOLD}one flow services are fully deployed and operational!{CLR_RESET}"
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line(row1, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET}{' ' * dash_w} {CLR_PRIMARY}│{CLR_RESET}")
-        
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('  ' + CLR_BOLD + 'Service Endpoints:' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'Web App:' + CLR_RESET + '          ' + CLR_PRIMARY + 'http://' + app_domain + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'God Mode (Admin):' + CLR_RESET + ' ' + CLR_MUTED + 'http://' + app_domain + '/god-mode/' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'Spaces (Public):' + CLR_RESET + '  ' + CLR_MUTED + 'http://' + app_domain + '/spaces/' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'REST API:' + CLR_RESET + '         ' + CLR_MUTED + 'http://' + app_domain + '/api/' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'MinIO Console:' + CLR_RESET + '    ' + CLR_MUTED + 'http://' + app_domain + ':9090' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'MinIO S3 API:' + CLR_RESET + '     ' + CLR_MUTED + 'http://' + app_domain + ':9000' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'Live Collab:' + CLR_RESET + '      ' + CLR_MUTED + 'ws://' + app_domain + '/live/' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET}{' ' * dash_w} {CLR_PRIMARY}│{CLR_RESET}")
-        
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('  ' + CLR_BOLD + 'Management Shortcuts:' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
+        cols, _ = shutil.get_terminal_size((120, 35))
+        dash_w = min(max(cols - 4, 60), 76)
         d_cmd_str = ' '.join(tui.docker_cmd)
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'Live Logs:' + CLR_RESET + '  ' + CLR_MUTED + d_cmd_str + ' compose logs -f' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'Restart:' + CLR_RESET + '    ' + CLR_MUTED + d_cmd_str + ' compose restart' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET} {fit_line('     ' + CLR_TEXT + 'Stop:' + CLR_RESET + '       ' + CLR_MUTED + d_cmd_str + ' compose down' + CLR_RESET, dash_w - 2)} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET}{' ' * dash_w} {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}╰{'─' * (dash_w + 2)}╯{CLR_RESET}\n")
+
+        dash_lines = [
+            "",
+            f"  {CLR_SUCCESS}{CLR_BOLD}●{CLR_RESET}  {CLR_BOLD}one flow services are fully deployed and operational!{CLR_RESET}",
+            "",
+            f"  {CLR_BOLD}Service Endpoints:{CLR_RESET}",
+            f"     {CLR_TEXT}Web App:{CLR_RESET}          {CLR_PRIMARY}http://{app_domain}{CLR_RESET}",
+            f"     {CLR_TEXT}God Mode (Admin):{CLR_RESET} {CLR_MUTED}http://{app_domain}/god-mode/{CLR_RESET}",
+            f"     {CLR_TEXT}Spaces (Public):{CLR_RESET}  {CLR_MUTED}http://{app_domain}/spaces/{CLR_RESET}",
+            f"     {CLR_TEXT}REST API:{CLR_RESET}         {CLR_MUTED}http://{app_domain}/api/{CLR_RESET}",
+            f"     {CLR_TEXT}MinIO Console:{CLR_RESET}    {CLR_MUTED}http://{app_domain}:9090{CLR_RESET}",
+            f"     {CLR_TEXT}MinIO S3 API:{CLR_RESET}     {CLR_MUTED}http://{app_domain}:9000{CLR_RESET}",
+            f"     {CLR_TEXT}Live Collab:{CLR_RESET}      {CLR_MUTED}ws://{app_domain}/live/{CLR_RESET}",
+            "",
+            f"  {CLR_BOLD}Management Shortcuts:{CLR_RESET}",
+            f"     {CLR_TEXT}Live Logs:{CLR_RESET}  {CLR_MUTED}{d_cmd_str} compose logs -f{CLR_RESET}",
+            f"     {CLR_TEXT}Restart:{CLR_RESET}    {CLR_MUTED}{d_cmd_str} compose restart{CLR_RESET}",
+            f"     {CLR_TEXT}Stop:{CLR_RESET}       {CLR_MUTED}{d_cmd_str} compose down{CLR_RESET}",
+            "",
+        ]
+
+        for row in build_box(dash_w, "APPLICATION STATUS: ONLINE", dash_lines):
+            print(f" {row}")
+        print("")
         print(f" {CLR_MUTED}Documentation & Support:{CLR_RESET} {CLR_PRIMARY}https://github.com/sohan20051519/oneflow{CLR_RESET}\n")
         sys.exit(0)
     else:
