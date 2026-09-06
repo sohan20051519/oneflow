@@ -19,10 +19,14 @@ from rest_framework.permissions import AllowAny
 
 # Module imports
 from .base import BaseViewSet, BaseAPIView
-from plane.app.serializers import (
-    ProjectMemberInviteSerializer,
-    ProjectMemberInvitePublicSerializer,
-)
+try:
+    from plane.app.serializers import (
+        ProjectMemberInviteSerializer,
+        ProjectMemberInvitePublicSerializer,
+    )
+except ImportError:
+    from plane.app.serializers import ProjectMemberInviteSerializer
+    ProjectMemberInvitePublicSerializer = ProjectMemberInviteSerializer
 from plane.app.permissions import allow_permission, ROLE
 from plane.db.models import (
     ProjectMember,
@@ -284,3 +288,7 @@ class ProjectJoinEndpoint(BaseAPIView):
         project_invitation = ProjectMemberInvite.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
         serializer = ProjectMemberInvitePublicSerializer(project_invitation)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+UserProjectJoinEndpoint = ProjectJoinEndpoint
+
