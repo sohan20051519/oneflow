@@ -372,6 +372,62 @@ class TUIState:
                 except Exception:
                     pass
 
+        # Auto-sanitize existing .env files to eliminate unexpanded variables or localhost URLs in containers
+        api_env_path = os.path.join(self.source_dir, "apps/api/.env")
+        if os.path.isfile(api_env_path):
+            try:
+                with open(api_env_path, "r") as f:
+                    c = f.read()
+                changed = False
+                if "${POSTGRES_" in c or "postgresql://${" in c:
+                    c = re.sub(r'^DATABASE_URL=.*', 'DATABASE_URL="postgresql://plane:plane@plane-db:5432/plane"', c, flags=re.MULTILINE)
+                    changed = True
+                if "${REDIS_" in c or "redis://${" in c or "redis://localhost" in c:
+                    c = re.sub(r'^REDIS_URL=.*', 'REDIS_URL="redis://plane-redis:6379/"', c, flags=re.MULTILINE)
+                    changed = True
+                if "http://localhost:9000" in c:
+                    c = c.replace("http://localhost:9000", "http://plane-minio:9000")
+                    changed = True
+                if not re.search(r'^AMQP_URL=', c, re.MULTILINE) or "${" in (re.search(r'^AMQP_URL=(.*)', c, re.MULTILINE) or [None, ""])[1]:
+                    if re.search(r'^AMQP_URL=', c, re.MULTILINE):
+                        c = re.sub(r'^AMQP_URL=.*', 'AMQP_URL="amqp://plane:plane@plane-mq:5672/plane"', c, flags=re.MULTILINE)
+                    else:
+                        c += '\nAMQP_URL="amqp://plane:plane@plane-mq:5672/plane"\n'
+                    changed = True
+                if changed:
+                    with open(api_env_path, "w") as f:
+                        f.write(c)
+                    self.add_activity("ok", "Sanitized apps/api/.env container endpoints")
+                    self.log("env", "Fixed container connection URLs in apps/api/.env")
+            except Exception as e:
+                self.log("env", f"Warning: could not sanitize apps/api/.env: {e}")
+
+        live_env_path = os.path.join(self.source_dir, "apps/live/.env")
+        if os.path.isfile(live_env_path):
+            try:
+                with open(live_env_path, "r") as f:
+                    c = f.read()
+                changed = False
+                if "http://localhost:8000" in c:
+                    c = c.replace("http://localhost:8000", "http://api:8000")
+                    changed = True
+                if "REDIS_HOST=localhost" in c or 'REDIS_HOST="localhost"' in c:
+                    c = re.sub(r'^REDIS_HOST=.*', 'REDIS_HOST="plane-redis"', c, flags=re.MULTILINE)
+                    changed = True
+                if "redis://localhost" in c:
+                    c = re.sub(r'^REDIS_URL=.*', 'REDIS_URL="redis://plane-redis:6379/"', c, flags=re.MULTILINE)
+                    changed = True
+                if not re.search(r'^LIVE_SERVER_SECRET_KEY=', c, re.MULTILINE):
+                    c += '\nLIVE_SERVER_SECRET_KEY="secret-key"\n'
+                    changed = True
+                if changed:
+                    with open(live_env_path, "w") as f:
+                        f.write(c)
+                    self.add_activity("ok", "Sanitized apps/live/.env container endpoints")
+                    self.log("env", "Fixed container connection URLs in apps/live/.env")
+            except Exception as e:
+                self.log("env", f"Warning: could not sanitize apps/live/.env: {e}")
+
         # Ensure DOMAIN_NAME in deploy configurations reflects current host IP
         detected_ip = detect_server_ip(self.deploy_dir, self.source_dir)
         if detected_ip and detected_ip not in ["localhost", "127.0.0.1", "13.234.29.32"]:
@@ -738,20 +794,25 @@ def main():
             f"  {CLR_SUCCESS}{CLR_BOLD}●{CLR_RESET}  {CLR_BOLD}one flow services are fully deployed and operational!{CLR_RESET}",
             "",
             f"  {CLR_BOLD}Service Endpoints:{CLR_RESET}",
-            f"     {CLR_TEXT}Web App:{CLR_RESET}          {CLR_PRIMARY}http://{app_domain}{CLR_RESET}",
-            f"     {CLR_TEXT}God Mode (Admin):{CLR_RESET} {CLR_MUTED}http://{app_domain}/god-mode/{CLR_RESET}",
-            f"     {CLR_TEXT}Spaces (Public):{CLR_RESET}  {CLR_MUTED}http://{app_domain}/spaces/{CLR_RESET}",
-            f"     {CLR_TEXT}REST API:{CLR_RESET}         {CLR_MUTED}http://{app_domain}/api/{CLR_RESET}",
-            f"     {CLR_TEXT}MinIO Console:{CLR_RESET}    {CLR_MUTED}http://{app_domain}:9090{CLR_RESET}",
-            f"     {CLR_TEXT}MinIO S3 API:{CLR_RESET}     {CLR_MUTED}http://{app_domain}:9000{CLR_RESET}",
-            f"     {CLR_TEXT}Live Collab:{CLR_RESET}      {CLR_MUTED}ws://{app_domain}/live/{CLR_RESET}",
+            f"     {CLR_TEXT}Web App (Local):{CLR_RESET}   {CLR_PRIMARY}http://localhost{CLR_RESET}",
+        ]
+        if app_domain and app_domain not in ["localhost", "127.0.0.1"]:
+            dash_lines.append(f"     {CLR_TEXT}Web App (Network):{CLR_RESET} {CLR_PRIMARY}http://{app_domain}{CLR_RESET}")
+        
+        dash_lines.extend([
+            f"     {CLR_TEXT}God Mode (Admin):{CLR_RESET} {CLR_MUTED}http://localhost/god-mode/{CLR_RESET}",
+            f"     {CLR_TEXT}Spaces (Public):{CLR_RESET}  {CLR_MUTED}http://localhost/spaces/{CLR_RESET}",
+            f"     {CLR_TEXT}REST API:{CLR_RESET}         {CLR_MUTED}http://localhost/api/{CLR_RESET}",
+            f"     {CLR_TEXT}MinIO Console:{CLR_RESET}    {CLR_MUTED}http://localhost:9090{CLR_RESET}",
+            f"     {CLR_TEXT}MinIO S3 API:{CLR_RESET}     {CLR_MUTED}http://localhost:9000{CLR_RESET}",
+            f"     {CLR_TEXT}Live Collab:{CLR_RESET}      {CLR_MUTED}ws://localhost/live/{CLR_RESET}",
             "",
             f"  {CLR_BOLD}Management Shortcuts:{CLR_RESET}",
             f"     {CLR_TEXT}Live Logs:{CLR_RESET}  {CLR_MUTED}{d_cmd_str} compose logs -f{CLR_RESET}",
             f"     {CLR_TEXT}Restart:{CLR_RESET}    {CLR_MUTED}{d_cmd_str} compose restart{CLR_RESET}",
             f"     {CLR_TEXT}Stop:{CLR_RESET}       {CLR_MUTED}{d_cmd_str} compose down{CLR_RESET}",
             "",
-        ]
+        ])
 
         for row in build_box(dash_w, "APPLICATION STATUS: ONLINE", dash_lines):
             print(f" {row}")

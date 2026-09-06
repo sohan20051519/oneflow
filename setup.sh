@@ -180,6 +180,37 @@ copy_env "${SOURCE_DIR}/apps/space/.env.example" "${SOURCE_DIR}/apps/space/.env"
 copy_env "${SOURCE_DIR}/apps/admin/.env.example" "${SOURCE_DIR}/apps/admin/.env" "./apps/admin/.env"
 copy_env "${SOURCE_DIR}/apps/live/.env.example" "${SOURCE_DIR}/apps/live/.env" "./apps/live/.env"
 
+# Auto-sanitize apps/api/.env to eliminate unexpanded variables and localhost endpoints
+if [ -f "${SOURCE_DIR}/apps/api/.env" ]; then
+    if grep -q '\${POSTGRES_' "${SOURCE_DIR}/apps/api/.env" || grep -q 'postgresql://\${' "${SOURCE_DIR}/apps/api/.env"; then
+        sed -i 's|^DATABASE_URL=.*|DATABASE_URL="postgresql://plane:plane@plane-db:5432/plane"|' "${SOURCE_DIR}/apps/api/.env"
+        print_item "ok" "Fixed DATABASE_URL container endpoint in apps/api/.env"
+    fi
+    if grep -q '\${REDIS_' "${SOURCE_DIR}/apps/api/.env" || grep -q 'redis://localhost' "${SOURCE_DIR}/apps/api/.env"; then
+        sed -i 's|^REDIS_URL=.*|REDIS_URL="redis://plane-redis:6379/"|' "${SOURCE_DIR}/apps/api/.env"
+        print_item "ok" "Fixed REDIS_URL container endpoint in apps/api/.env"
+    fi
+    if grep -q 'http://localhost:9000' "${SOURCE_DIR}/apps/api/.env"; then
+        sed -i 's|http://localhost:9000|http://plane-minio:9000|g' "${SOURCE_DIR}/apps/api/.env"
+        print_item "ok" "Fixed AWS_S3_ENDPOINT_URL in apps/api/.env"
+    fi
+    if ! grep -q "^AMQP_URL=" "${SOURCE_DIR}/apps/api/.env"; then
+        echo 'AMQP_URL="amqp://plane:plane@plane-mq:5672/plane"' >> "${SOURCE_DIR}/apps/api/.env"
+        print_item "ok" "Added AMQP_URL to apps/api/.env"
+    fi
+fi
+
+# Auto-sanitize apps/live/.env for container networking
+if [ -f "${SOURCE_DIR}/apps/live/.env" ]; then
+    sed -i 's|http://localhost:8000|http://api:8000|g' "${SOURCE_DIR}/apps/live/.env"
+    sed -i 's|^REDIS_HOST=localhost|REDIS_HOST="plane-redis"|' "${SOURCE_DIR}/apps/live/.env"
+    sed -i 's|redis://localhost:6379/|redis://plane-redis:6379/|g' "${SOURCE_DIR}/apps/live/.env"
+    if ! grep -q "^LIVE_SERVER_SECRET_KEY=" "${SOURCE_DIR}/apps/live/.env"; then
+        echo 'LIVE_SERVER_SECRET_KEY="secret-key"' >> "${SOURCE_DIR}/apps/live/.env"
+        print_item "ok" "Added LIVE_SERVER_SECRET_KEY to apps/live/.env"
+    fi
+fi
+
 # Ensure deploy environment configuration is in place
 if [ -f "${DEPLOY_DIR}/plane.env" ]; then
     ln -sf plane.env "${DEPLOY_DIR}/.env" 2>/dev/null || true
@@ -388,13 +419,16 @@ if [ "$SETUP_SUCCESS" = true ]; then
     box_row $DASH_W "  ${CLR_SUCCESS}${CLR_BOLD}●${CLR_RESET}  ${CLR_BOLD}one flow services are fully deployed and operational!${CLR_RESET}"
     box_row $DASH_W ""
     box_row $DASH_W "  ${CLR_BOLD}Service Endpoints:${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}Web App:${CLR_RESET}          ${CLR_PRIMARY}http://${APP_DOMAIN}${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}God Mode (Admin):${CLR_RESET} ${CLR_MUTED}http://${APP_DOMAIN}/god-mode/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}Spaces (Public):${CLR_RESET}  ${CLR_MUTED}http://${APP_DOMAIN}/spaces/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}REST API:${CLR_RESET}         ${CLR_MUTED}http://${APP_DOMAIN}/api/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}MinIO Console:${CLR_RESET}    ${CLR_MUTED}http://${APP_DOMAIN}:9090${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}MinIO S3 API:${CLR_RESET}     ${CLR_MUTED}http://${APP_DOMAIN}:9000${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}Live Collab:${CLR_RESET}      ${CLR_MUTED}ws://${APP_DOMAIN}/live/ (WebSocket Engine)${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Web App (Local):{CLR_RESET}   ${CLR_PRIMARY}http://localhost${CLR_RESET}"
+    if [ "$APP_DOMAIN" != "localhost" ] && [ "$APP_DOMAIN" != "127.0.0.1" ]; then
+        box_row $DASH_W "     ${CLR_TEXT}Web App (Network):{CLR_RESET} ${CLR_PRIMARY}http://${APP_DOMAIN}${CLR_RESET}"
+    fi
+    box_row $DASH_W "     ${CLR_TEXT}God Mode (Admin):{CLR_RESET} ${CLR_MUTED}http://localhost/god-mode/${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Spaces (Public):{CLR_RESET}  ${CLR_MUTED}http://localhost/spaces/${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}REST API:${CLR_RESET}         ${CLR_MUTED}http://localhost/api/${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}MinIO Console:{CLR_RESET}    ${CLR_MUTED}http://localhost:9090${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}MinIO S3 API:${CLR_RESET}     ${CLR_MUTED}http://localhost:9000${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Live Collab:${CLR_RESET}      ${CLR_MUTED}ws://localhost/live/ (WebSocket Engine)${CLR_RESET}"
     box_row $DASH_W ""
     box_row $DASH_W "  ${CLR_BOLD}Management Shortcuts:${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}Live Logs:${CLR_RESET}  ${CLR_MUTED}${DOCKER_CMD} compose logs -f${CLR_RESET}"
