@@ -379,20 +379,38 @@ class TUIState:
                 with open(api_env_path, "r") as f:
                     c = f.read()
                 changed = False
-                if "${POSTGRES_" in c or "postgresql://${" in c:
-                    c = re.sub(r'^DATABASE_URL=.*', 'DATABASE_URL="postgresql://plane:plane@plane-db:5432/plane"', c, flags=re.MULTILINE)
+                if "plane-db" not in c or "${" in c or "localhost" in c or "127.0.0.1" in c:
+                    if re.search(r'^DATABASE_URL=.*', c, re.MULTILINE):
+                        c = re.sub(r'^DATABASE_URL=.*', 'DATABASE_URL="postgresql://plane:plane@plane-db:5432/plane"', c, flags=re.MULTILINE)
+                    else:
+                        c += '\nDATABASE_URL="postgresql://plane:plane@plane-db:5432/plane"\n'
                     changed = True
-                if "${REDIS_" in c or "redis://${" in c or "redis://localhost" in c:
-                    c = re.sub(r'^REDIS_URL=.*', 'REDIS_URL="redis://plane-redis:6379/"', c, flags=re.MULTILINE)
+                if "plane-redis" not in c or "${" in c or "localhost" in c or "127.0.0.1" in c:
+                    if re.search(r'^REDIS_URL=.*', c, re.MULTILINE):
+                        c = re.sub(r'^REDIS_URL=.*', 'REDIS_URL="redis://plane-redis:6379/"', c, flags=re.MULTILINE)
+                    else:
+                        c += '\nREDIS_URL="redis://plane-redis:6379/"\n'
                     changed = True
                 if "http://localhost:9000" in c:
                     c = c.replace("http://localhost:9000", "http://plane-minio:9000")
                     changed = True
-                if not re.search(r'^AMQP_URL=', c, re.MULTILINE) or "${" in (re.search(r'^AMQP_URL=(.*)', c, re.MULTILINE) or [None, ""])[1]:
-                    if re.search(r'^AMQP_URL=', c, re.MULTILINE):
+                if "plane-mq" not in c or "${" in c or "localhost" in c or "127.0.0.1" in c:
+                    if re.search(r'^AMQP_URL=.*', c, re.MULTILINE):
                         c = re.sub(r'^AMQP_URL=.*', 'AMQP_URL="amqp://plane:plane@plane-mq:5672/plane"', c, flags=re.MULTILINE)
                     else:
                         c += '\nAMQP_URL="amqp://plane:plane@plane-mq:5672/plane"\n'
+                    changed = True
+                if re.search(r'^POSTGRES_HOST=.*', c, re.MULTILINE):
+                    c = re.sub(r'^POSTGRES_HOST=.*', 'POSTGRES_HOST="plane-db"', c, flags=re.MULTILINE)
+                    changed = True
+                else:
+                    c += '\nPOSTGRES_HOST="plane-db"\n'
+                    changed = True
+                if re.search(r'^REDIS_HOST=.*', c, re.MULTILINE):
+                    c = re.sub(r'^REDIS_HOST=.*', 'REDIS_HOST="plane-redis"', c, flags=re.MULTILINE)
+                    changed = True
+                else:
+                    c += '\nREDIS_HOST="plane-redis"\n'
                     changed = True
                 if changed:
                     with open(api_env_path, "w") as f:
@@ -554,7 +572,7 @@ class TUIState:
             compose_args.extend(["--env-file", os.path.join(self.source_dir, ".env")])
             self.log("compose", "Applied environment: .env")
 
-        compose_args.extend(["up", "-d"])
+        compose_args.extend(["up", "-d", "--build"])
         self.log("compose", f"Executing: {' '.join(compose_args)}")
         
         proc = subprocess.Popen(compose_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -580,14 +598,17 @@ class TUIState:
         self.set_step(4)
         self.set_progress(85, "Awaiting service ports and database initialization...")
         self.add_activity("info", "Probing service endpoints...")
-        self.log("health", "Initiating health checks on http://127.0.0.1:80/")
+        self.log("health", "Initiating health checks on http://127.0.0.1:80/ and backend API")
 
         retries = 45
         app_ready = False
+        api_ready = False
         http_code = 0
+        api_code = 0
 
         for i in range(1, retries + 1):
-            self.log("health", f"Probing gateway (attempt {i}/{retries})...")
+            self.log("health", f"Probing gateway and backend (attempt {i}/{retries})...")
+            # 1. Probe Web Gateway
             try:
                 req = urllib.request.Request("http://127.0.0.1:80/", headers={"User-Agent": "oneflow-healthcheck"})
                 with urllib.request.urlopen(req, timeout=2) as resp:
@@ -597,17 +618,34 @@ class TUIState:
             except Exception:
                 http_code = 0
 
-            if http_code in [200, 301, 302]:
+            # 2. Probe Backend REST API endpoint directly through gateway
+            try:
+                api_req = urllib.request.Request("http://127.0.0.1:80/api/instances/", headers={"User-Agent": "oneflow-healthcheck"})
+                with urllib.request.urlopen(api_req, timeout=2) as resp:
+                    api_code = resp.getcode()
+            except urllib.error.HTTPError as e:
+                api_code = e.code
+            except Exception:
+                api_code = 0
+
+            if http_code in [200, 301, 302] and api_code in [200, 201, 401, 403, 404]:
                 app_ready = True
-                self.log("health", f"Gateway responded with HTTP {http_code} OK")
+                api_ready = True
+                self.log("health", f"Gateway (HTTP {http_code}) and Backend API (HTTP {api_code}) operational")
                 break
+            elif http_code in [200, 301, 302]:
+                self.log("health", f"Gateway online (HTTP {http_code}); awaiting backend migrations (API HTTP {api_code})...")
+
             time.sleep(2)
 
-        if app_ready:
+        if app_ready and api_ready:
             self.add_activity("ok", f"Frontend gateway responding (HTTP {http_code})")
-            self.add_activity("ok", "Backend API & database operational")
+            self.add_activity("ok", f"Backend API & database operational (HTTP {api_code})")
             self.add_activity("ok", "All application components online")
             self.log("health", "Application components fully verified and healthy")
+        elif app_ready:
+            self.add_activity("warn", f"Gateway online; backend migrations finalizing (HTTP {api_code})")
+            self.log("health", f"Gateway responded HTTP {http_code} but API returned HTTP {api_code}")
         else:
             self.add_activity("warn", "Services active; background startup continuing")
             self.log("health", "Probe timed out; services completing startup in background")

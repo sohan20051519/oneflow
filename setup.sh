@@ -292,11 +292,11 @@ if [ -f "$COMPOSE_FILE" ]; then
     print_item "ok" "Detected docker-compose configuration (${COMPOSE_FILE##*/})"
     print_item "info" "Starting containers with Docker Compose..."
     if [ -f "$COMPOSE_ENV" ]; then
-        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" --env-file "$COMPOSE_ENV" up -d >/dev/null 2>&1
+        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" --env-file "$COMPOSE_ENV" up -d --build >/dev/null 2>&1
     elif [ -f "${SOURCE_DIR}/.env" ]; then
-        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" --env-file "${SOURCE_DIR}/.env" up -d >/dev/null 2>&1
+        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" --env-file "${SOURCE_DIR}/.env" up -d --build >/dev/null 2>&1
     else
-        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" up -d >/dev/null 2>&1
+        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" up -d --build >/dev/null 2>&1
     fi
 
     RUNNING_COUNT=$(${DOCKER_CMD} ps --format "{{.Names}}" | wc -l)

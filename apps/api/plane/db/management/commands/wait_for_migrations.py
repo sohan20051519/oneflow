@@ -20,7 +20,12 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("No migrations Pending. Starting processes ..."))
 
     def _pending_migrations(self):
-        connection = connections[DEFAULT_DB_ALIAS]
-        executor = MigrationExecutor(connection)
-        targets = executor.loader.graph.leaf_nodes()
-        return bool(executor.migration_plan(targets))
+        try:
+            connection = connections[DEFAULT_DB_ALIAS]
+            connection.ensure_connection()
+            executor = MigrationExecutor(connection)
+            targets = executor.loader.graph.leaf_nodes()
+            return bool(executor.migration_plan(targets))
+        except Exception as exc:
+            self.stdout.write(f"Database migrations not ready yet ({exc}). Waiting...")
+            return True
