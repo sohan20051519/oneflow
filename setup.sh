@@ -41,12 +41,24 @@ SETUP_SUCCESS=true
 
 # Determine directory paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -d "${SCRIPT_DIR}/apps" ]; then
+
+# Launch interactive Dual-Pane TUI with Live Logs & Progress Bar if python3 is available
+if [ "$1" != "--no-tui" ] && command -v python3 >/dev/null 2>&1 && [ -f "${SCRIPT_DIR}/setup.py" ]; then
+    exec python3 "${SCRIPT_DIR}/setup.py" "$@"
+fi
+
+if [ -f "${SCRIPT_DIR}/docker-compose.yml" ]; then
+    DEPLOY_DIR="${SCRIPT_DIR}"
     SOURCE_DIR="${SCRIPT_DIR}"
+    COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
+elif [ -f "$(dirname "${SCRIPT_DIR}")/docker-compose.yml" ]; then
     DEPLOY_DIR="$(dirname "${SCRIPT_DIR}")"
+    SOURCE_DIR="${SCRIPT_DIR}"
+    COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
 else
     DEPLOY_DIR="${SCRIPT_DIR}"
     SOURCE_DIR="${SCRIPT_DIR}/source"
+    COMPOSE_FILE="${SOURCE_DIR}/docker-compose.yml"
 fi
 
 # Detect Docker command (supports rootless and sudo)
@@ -241,13 +253,15 @@ print_step_done
 # ==============================================================================
 print_step "STEP 4/5" "Deploying & Starting All Services"
 
-COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
 COMPOSE_ENV="${DEPLOY_DIR}/plane.env"
 
 if [ -f "$COMPOSE_FILE" ]; then
-    print_item "info" "Starting production containers with Docker Compose..."
+    print_item "ok" "Detected docker-compose configuration (${COMPOSE_FILE##*/})"
+    print_item "info" "Starting containers with Docker Compose..."
     if [ -f "$COMPOSE_ENV" ]; then
         ${DOCKER_CMD} compose --file "$COMPOSE_FILE" --env-file "$COMPOSE_ENV" up -d >/dev/null 2>&1
+    elif [ -f "${SOURCE_DIR}/.env" ]; then
+        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" --env-file "${SOURCE_DIR}/.env" up -d >/dev/null 2>&1
     else
         ${DOCKER_CMD} compose --file "$COMPOSE_FILE" up -d >/dev/null 2>&1
     fi
@@ -255,11 +269,8 @@ if [ -f "$COMPOSE_FILE" ]; then
     RUNNING_COUNT=$(${DOCKER_CMD} ps --format "{{.Names}}" | wc -l)
     print_item "ok" "Orchestrated ${RUNNING_COUNT} containerized services in background"
 else
-    print_item "warn" "No root docker-compose.yml found; trying source/docker-compose.yml"
-    if [ -f "${SOURCE_DIR}/docker-compose.yml" ]; then
-        ${DOCKER_CMD} compose -f "${SOURCE_DIR}/docker-compose.yml" up -d >/dev/null 2>&1
-        print_item "ok" "Started services from source/docker-compose.yml"
-    fi
+    print_item "fail" "No docker-compose.yml found"
+    SETUP_SUCCESS=false
 fi
 
 print_step_done
