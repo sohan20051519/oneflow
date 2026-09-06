@@ -182,12 +182,13 @@ copy_env "${SOURCE_DIR}/apps/live/.env.example" "${SOURCE_DIR}/apps/live/.env" "
 
 # Auto-sanitize apps/api/.env to eliminate unexpanded variables and localhost endpoints
 if [ -f "${SOURCE_DIR}/apps/api/.env" ]; then
-    if grep -q '\${POSTGRES_' "${SOURCE_DIR}/apps/api/.env" || grep -q 'postgresql://\${' "${SOURCE_DIR}/apps/api/.env"; then
-        sed -i 's|^DATABASE_URL=.*|DATABASE_URL="postgresql://plane:plane@plane-db:5432/plane"|' "${SOURCE_DIR}/apps/api/.env"
+    api_env_path="${SOURCE_DIR}/apps/api/.env"
+    if grep -q "DATABASE_URL=.*" "$api_env_path"; then
+        sed -i 's|^DATABASE_URL=.*|DATABASE_URL="postgresql://plane:plane@plane-db:5432/plane"|' "$api_env_path"
         print_item "ok" "Fixed DATABASE_URL container endpoint in apps/api/.env"
     fi
-    if grep -q '\${REDIS_' "${SOURCE_DIR}/apps/api/.env" || grep -q 'redis://localhost' "${SOURCE_DIR}/apps/api/.env"; then
-        sed -i 's|^REDIS_URL=.*|REDIS_URL="redis://plane-redis:6379/"|' "${SOURCE_DIR}/apps/api/.env"
+    if grep -q "REDIS_URL=.*" "$api_env_path"; then
+        sed -i 's|^REDIS_URL=.*|REDIS_URL="redis://plane-redis:6379/"|' "$api_env_path"
         print_item "ok" "Fixed REDIS_URL container endpoint in apps/api/.env"
     fi
     if grep -q 'http://localhost:9000' "${SOURCE_DIR}/apps/api/.env"; then
@@ -419,14 +420,14 @@ if [ "$SETUP_SUCCESS" = true ]; then
     box_row $DASH_W "  ${CLR_SUCCESS}${CLR_BOLD}●${CLR_RESET}  ${CLR_BOLD}one flow services are fully deployed and operational!${CLR_RESET}"
     box_row $DASH_W ""
     box_row $DASH_W "  ${CLR_BOLD}Service Endpoints:${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}Web App (Local):{CLR_RESET}   ${CLR_PRIMARY}http://localhost${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Web App (Local):${CLR_RESET}   ${CLR_PRIMARY}http://localhost${CLR_RESET}"
     if [ "$APP_DOMAIN" != "localhost" ] && [ "$APP_DOMAIN" != "127.0.0.1" ]; then
-        box_row $DASH_W "     ${CLR_TEXT}Web App (Network):{CLR_RESET} ${CLR_PRIMARY}http://${APP_DOMAIN}${CLR_RESET}"
+        box_row $DASH_W "     ${CLR_TEXT}Web App (Network):${CLR_RESET} ${CLR_PRIMARY}http://${APP_DOMAIN}${CLR_RESET}"
     fi
-    box_row $DASH_W "     ${CLR_TEXT}God Mode (Admin):{CLR_RESET} ${CLR_MUTED}http://localhost/god-mode/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}Spaces (Public):{CLR_RESET}  ${CLR_MUTED}http://localhost/spaces/${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}God Mode (Admin):${CLR_RESET} ${CLR_MUTED}http://localhost/god-mode/${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Spaces (Public):${CLR_RESET}  ${CLR_MUTED}http://localhost/spaces/${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}REST API:${CLR_RESET}         ${CLR_MUTED}http://localhost/api/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}MinIO Console:{CLR_RESET}    ${CLR_MUTED}http://localhost:9090${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}MinIO Console:${CLR_RESET}    ${CLR_MUTED}http://localhost:9090${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}MinIO S3 API:${CLR_RESET}     ${CLR_MUTED}http://localhost:9000${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}Live Collab:${CLR_RESET}      ${CLR_MUTED}ws://localhost/live/ (WebSocket Engine)${CLR_RESET}"
     box_row $DASH_W ""

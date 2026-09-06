@@ -173,7 +173,7 @@ class TUIState:
                 self.logs.append((now, tag, cleaned))
 
     def render(self) -> str:
-        cols, lines = shutil.get_terminal_size((120, 35))
+        cols, lines = shutil.get_terminal_size((80, 24))
         
         # Responsive Layout Calculation - Full Screen Geometry
         use_split = cols >= 110
@@ -785,7 +785,7 @@ def main():
         print(f" {CLR_SUCCESS}{CLR_BOLD}✓  one flow has been successfully deployed and started!{CLR_RESET}")
         print(f" {CLR_MUTED}All configuration files, containers, and services are up and running.{CLR_RESET}\n")
 
-        cols, _ = shutil.get_terminal_size((120, 35))
+        cols, _ = shutil.get_terminal_size((80, 24))
         dash_w = min(max(cols - 4, 60), 76)
         d_cmd_str = ' '.join(tui.docker_cmd)
 
