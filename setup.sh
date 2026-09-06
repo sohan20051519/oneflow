@@ -316,14 +316,56 @@ fi
 
 print_step_done
 
-# Detect host access IP / Domain
-APP_DOMAIN=""
-if [ -f "${DEPLOY_DIR}/plane.env" ]; then
-    APP_DOMAIN=$(grep -E "^DOMAIN_NAME=" "${DEPLOY_DIR}/plane.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
-fi
-if [ -z "$APP_DOMAIN" ] || [ "$APP_DOMAIN" = "localhost" ]; then
-    APP_DOMAIN="13.234.29.32"
-fi
+# Dynamically detect host access IP or Domain (never hardcodes static IPs)
+detect_host_ip() {
+    # 0. User override via environment variable
+    if [ -n "$ONEFLOW_DOMAIN" ] && [ "$ONEFLOW_DOMAIN" != "13.234.29.32" ]; then
+        echo "$ONEFLOW_DOMAIN"
+        return
+    fi
+    if [ -n "$APP_DOMAIN" ] && [ "$APP_DOMAIN" != "13.234.29.32" ]; then
+        echo "$APP_DOMAIN"
+        return
+    fi
+
+    # 1. Configured domain in plane.env or .env (strictly ignoring legacy IP 13.234.29.32)
+    local env_ip=""
+    if [ -f "${DEPLOY_DIR}/plane.env" ]; then
+        env_ip=$(grep -E "^DOMAIN_NAME=" "${DEPLOY_DIR}/plane.env" 2>/dev/null | cut -d '=' -f2- | tr -d '"' | tr -d "'" | head -n 1 || true)
+    fi
+    if [ -z "$env_ip" ] && [ -f "${DEPLOY_DIR}/.env" ]; then
+        env_ip=$(grep -E "^DOMAIN_NAME=" "${DEPLOY_DIR}/.env" 2>/dev/null | cut -d '=' -f2- | tr -d '"' | tr -d "'" | head -n 1 || true)
+    fi
+    if [ -n "$env_ip" ] && [ "$env_ip" != "13.234.29.32" ] && [ "$env_ip" != "localhost" ] && [ "$env_ip" != "127.0.0.1" ] && [ "$env_ip" != "0.0.0.0" ]; then
+        echo "$env_ip"
+        return
+    fi
+
+    # 2. Public IP discovery services (fast 2s timeout)
+    local pub_ip=""
+    for srv in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com" "https://checkip.amazonaws.com"; do
+        pub_ip=$(curl -s --max-time 2 "$srv" 2>/dev/null || true)
+        if echo "$pub_ip" | grep -Eq '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
+            echo "$pub_ip"
+            return
+        fi
+    done
+
+    # 3. Default route / local network interface (excluding docker bridges 172.17/18)
+    local lan_ip=""
+    lan_ip=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[0-9.]+' || true)
+    if [ -z "$lan_ip" ]; then
+        lan_ip=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i !~ /^127\./ && $i !~ /^172\.(17|18)\./) {print $i; exit}}' || true)
+    fi
+    if [ -n "$lan_ip" ] && [ "$lan_ip" != "127.0.0.1" ]; then
+        echo "$lan_ip"
+        return
+    fi
+
+    echo "localhost"
+}
+
+APP_DOMAIN=$(detect_host_ip)
 
 # ==============================================================================
 # Summary & Application Status Dashboard

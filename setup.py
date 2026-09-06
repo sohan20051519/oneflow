@@ -359,6 +359,22 @@ class TUIState:
                 except Exception:
                     pass
 
+        # Ensure DOMAIN_NAME in deploy configurations reflects current host IP
+        detected_ip = detect_server_ip(self.deploy_dir, self.source_dir)
+        if detected_ip and detected_ip not in ["localhost", "127.0.0.1", "13.234.29.32"]:
+            for env_candidate in [plane_env, os.path.join(self.source_dir, ".env")]:
+                if os.path.isfile(env_candidate):
+                    try:
+                        with open(env_candidate, "r") as f:
+                            c = f.read()
+                        if "13.234.29.32" in c:
+                            c = c.replace("13.234.29.32", detected_ip)
+                            with open(env_candidate, "w") as f:
+                                f.write(c)
+                            self.log("env", f"Updated legacy IP in {os.path.basename(env_candidate)} to {detected_ip}")
+                    except Exception:
+                        pass
+
         self.set_progress(20, "Environment configurations verified")
         time.sleep(0.4)
 
@@ -530,6 +546,86 @@ class TUIState:
         self.set_progress(100, "one flow deployment complete!")
         time.sleep(0.6)
 
+def detect_server_ip(deploy_dir: str, source_dir: str) -> str:
+    """
+    Dynamically detect the host's actual public or network IP address.
+    Never falls back to hardcoded IPs.
+    """
+    # 0. User override via environment variable
+    env_override = os.environ.get("ONEFLOW_DOMAIN") or os.environ.get("APP_DOMAIN")
+    if env_override and env_override.strip() not in ["13.234.29.32", "localhost", "127.0.0.1", "0.0.0.0", ""]:
+        return env_override.strip()
+
+    # 1. Check if configured in plane.env or .env (strictly ignoring legacy hardcoded IP 13.234.29.32)
+    for env_path in [
+        os.path.join(deploy_dir, "plane.env"),
+        os.path.join(source_dir, ".env"),
+        os.path.join(deploy_dir, ".env"),
+    ]:
+        if os.path.isfile(env_path):
+            try:
+                with open(env_path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("DOMAIN_NAME=") or line.startswith("APP_DOMAIN="):
+                            val = line.split("=", 1)[1].strip().strip('"\'')
+                            if val and val not in ["13.234.29.32", "localhost", "127.0.0.1", "0.0.0.0", ""]:
+                                return val
+            except Exception:
+                pass
+
+    # 2. Query public IP discovery services with fast timeout
+    ip_services = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://icanhazip.com",
+        "https://checkip.amazonaws.com",
+    ]
+    for url in ip_services:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0"})
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                ip = resp.read().decode("utf-8").strip()
+                if ip and re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+                    return ip
+        except Exception:
+            continue
+
+    # 3. Query outbound network socket for local interface IP (LAN / private subnet)
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(1.5)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip and not ip.startswith("127.") and not ip.startswith("172.17.") and not ip.startswith("172.18."):
+            return ip
+    except Exception:
+        pass
+
+    # 4. Fallback to ip route get or hostname -I
+    try:
+        route_out = subprocess.check_output(["ip", "route", "get", "1.1.1.1"], text=True, stderr=subprocess.DEVNULL).strip()
+        m = re.search(r'src\s+([0-9.]+)', route_out)
+        if m:
+            ip = m.group(1).strip()
+            if ip and not ip.startswith("127."):
+                return ip
+    except Exception:
+        pass
+
+    try:
+        out = subprocess.check_output(["hostname", "-I"], text=True, stderr=subprocess.DEVNULL).strip().split()
+        for cand in out:
+            cand = cand.strip()
+            if cand and not cand.startswith("127.") and not cand.startswith("172.17.") and not cand.startswith("172.18."):
+                return cand
+    except Exception:
+        pass
+
+    return "localhost"
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     is_tty = sys.stdout.isatty()
@@ -573,17 +669,8 @@ def main():
             sys.stdout.write("\033[?1049l\033[?25h\033[0m\n")
             sys.stdout.flush()
 
-    # Determine domain name
-    app_domain = "13.234.29.32"
-    plane_env = os.path.join(tui.deploy_dir, "plane.env")
-    if os.path.isfile(plane_env):
-        with open(plane_env, "r") as f:
-            for line in f:
-                if line.startswith("DOMAIN_NAME="):
-                    d = line.split("=", 1)[1].strip().strip('"\'')
-                    if d and d != "localhost":
-                        app_domain = d
-                    break
+    # Determine domain name dynamically
+    app_domain = detect_server_ip(tui.deploy_dir, tui.source_dir)
 
     # Final Permanent Dashboard (Printed to standard terminal scrollback)
     print("")

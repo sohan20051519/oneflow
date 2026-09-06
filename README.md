@@ -242,7 +242,7 @@ The script automatically executes the following:
 3. **Synchronizes Docker Images**: Automatically detects the Docker runtime and ensures `plane-frontend:oneflow` is available.
 4. **Orchestrates Containers**: Launches all 21 microservices via Docker Compose in detached mode.
 5. **Performs Health Checks**: Continuously polls services until the database, API, and web gateways respond healthy.
-6. **Displays Live Dashboard**: Provides access URLs (`http://localhost`, `http://13.234.29.32`) and service management shortcuts.
+6. **Displays Live Dashboard**: Provides access URLs (`http://localhost` or `http://<server-ip>`) and service management shortcuts.
 
 ---
 
