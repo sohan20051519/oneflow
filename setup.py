@@ -87,6 +87,51 @@ def build_box(width: int, title: str, content_lines: list, border_color: str = C
     rows.append(f"{border_color}╰{'─' * bot_dash}╯{CLR_RESET}")
     return rows
 
+def ensure_swap_space(log_fn=None, activity_fn=None):
+    """
+    On 1GB RAM instances (e.g. AWS t3.micro), physical RAM is ~980MB.
+    Without swap, kernel OOM-killer will kill containers during bursts.
+    If swap is < 1GB and total RAM <= 2.5GB, automatically provision a 2GB /swapfile.
+    """
+    try:
+        mem_total_kb = 0
+        swap_total_kb = 0
+        if os.path.isfile("/proc/meminfo"):
+            with open("/proc/meminfo", "r") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        mem_total_kb = int(line.split()[1])
+                    elif line.startswith("SwapTotal:"):
+                        swap_total_kb = int(line.split()[1])
+        if 0 < mem_total_kb < 2600000 and swap_total_kb < 1000000:
+            if log_fn:
+                log_fn("swap", f"Low memory profile: {mem_total_kb // 1024} MB RAM, {swap_total_kb // 1024} MB swap")
+            if activity_fn:
+                activity_fn("info", "Configuring 2GB swap for 1GB RAM stability...")
+            cmd_prefix = ["sudo"] if shutil.which("sudo") and os.geteuid() != 0 else []
+            if not os.path.exists("/swapfile"):
+                r = subprocess.run(cmd_prefix + ["fallocate", "-l", "2G", "/swapfile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if r.returncode != 0:
+                    subprocess.run(cmd_prefix + ["dd", "if=/dev/zero", "of=/swapfile", "bs=1M", "count=2048"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(cmd_prefix + ["chmod", "600", "/swapfile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(cmd_prefix + ["mkswap", "/swapfile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(cmd_prefix + ["swapon", "/swapfile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                with open("/etc/fstab", "r") as f:
+                    fstab = f.read()
+                if "/swapfile" not in fstab:
+                    subprocess.run(["sh", "-c", "echo '/swapfile none swap sw 0 0' | " + ("sudo " if cmd_prefix else "") + "tee -a /etc/fstab"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+            subprocess.run(cmd_prefix + ["sysctl", "vm.swappiness=10"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if activity_fn:
+                activity_fn("ok", "2GB swapfile active (OOM protection ready)")
+            if log_fn:
+                log_fn("swap", "Enabled 2GB swapfile for 1GB RAM instance")
+    except Exception as e:
+        if log_fn:
+            log_fn("swap", f"Swap check info: {e}")
+
 class TUIState:
     def __init__(self, script_dir: str):
         self.script_dir = script_dir
@@ -334,8 +379,9 @@ class TUIState:
 
     def _step_1_env(self):
         self.set_step(0)
-        self.set_progress(5, "Generating configuration files...")
-        self.log("env", "Scanning configuration templates")
+        self.set_progress(5, "Verifying environment & system memory...")
+        self.log("env", "Checking memory profile and swap configuration")
+        ensure_swap_space(self.log, self.add_activity)
 
         def copy_cfg(src_rel, dest_rel, label):
             src = os.path.join(self.source_dir, src_rel)
@@ -372,7 +418,7 @@ class TUIState:
                 except Exception:
                     pass
 
-        # Auto-sanitize existing .env files to eliminate unexpanded variables or localhost URLs in containers
+        # Auto-sanitize existing .env files for 1GB RAM container networking and Redis broker
         api_env_path = os.path.join(self.source_dir, "apps/api/.env")
         if os.path.isfile(api_env_path):
             try:
@@ -391,14 +437,17 @@ class TUIState:
                     else:
                         c += '\nREDIS_URL="redis://plane-redis:6379/"\n'
                     changed = True
-                if "http://localhost:9000" in c:
-                    c = c.replace("http://localhost:9000", "http://plane-minio:9000")
+                if not re.search(r'^CELERY_BROKER_URL=.*', c, re.MULTILINE):
+                    c += '\nCELERY_BROKER_URL="redis://plane-redis:6379/1"\n'
                     changed = True
-                if "plane-mq" not in c or "${" in c or "localhost" in c or "127.0.0.1" in c:
-                    if re.search(r'^AMQP_URL=.*', c, re.MULTILINE):
-                        c = re.sub(r'^AMQP_URL=.*', 'AMQP_URL="amqp://plane:plane@plane-mq:5672/plane"', c, flags=re.MULTILINE)
-                    else:
-                        c += '\nAMQP_URL="amqp://plane:plane@plane-mq:5672/plane"\n'
+                else:
+                    c = re.sub(r'^CELERY_BROKER_URL=.*', 'CELERY_BROKER_URL="redis://plane-redis:6379/1"', c, flags=re.MULTILINE)
+                    changed = True
+                if re.search(r'^GUNICORN_WORKERS=.*', c, re.MULTILINE):
+                    c = re.sub(r'^GUNICORN_WORKERS=.*', 'GUNICORN_WORKERS="1"', c, flags=re.MULTILINE)
+                    changed = True
+                else:
+                    c += '\nGUNICORN_WORKERS="1"\n'
                     changed = True
                 if re.search(r'^POSTGRES_HOST=.*', c, re.MULTILINE):
                     c = re.sub(r'^POSTGRES_HOST=.*', 'POSTGRES_HOST="plane-db"', c, flags=re.MULTILINE)
@@ -415,8 +464,8 @@ class TUIState:
                 if changed:
                     with open(api_env_path, "w") as f:
                         f.write(c)
-                    self.add_activity("ok", "Sanitized apps/api/.env container endpoints")
-                    self.log("env", "Fixed container connection URLs in apps/api/.env")
+                    self.add_activity("ok", "Optimized apps/api/.env (Redis Celery broker, 1 worker)")
+                    self.log("env", "Configured Redis broker & low-memory settings in apps/api/.env")
             except Exception as e:
                 self.log("env", f"Warning: could not sanitize apps/api/.env: {e}")
 
@@ -853,8 +902,6 @@ def main():
             f"     {CLR_TEXT}God Mode (Admin):{CLR_RESET} {CLR_MUTED}http://localhost/god-mode/{CLR_RESET}",
             f"     {CLR_TEXT}Spaces (Public):{CLR_RESET}  {CLR_MUTED}http://localhost/spaces/{CLR_RESET}",
             f"     {CLR_TEXT}REST API:{CLR_RESET}         {CLR_MUTED}http://localhost/api/{CLR_RESET}",
-            f"     {CLR_TEXT}MinIO Console:{CLR_RESET}    {CLR_MUTED}http://localhost:9090{CLR_RESET}",
-            f"     {CLR_TEXT}MinIO S3 API:{CLR_RESET}     {CLR_MUTED}http://localhost:9000{CLR_RESET}",
             f"     {CLR_TEXT}Live Collab:{CLR_RESET}      {CLR_MUTED}ws://localhost/live/{CLR_RESET}",
             "",
             f"  {CLR_BOLD}Management Shortcuts:{CLR_RESET}",

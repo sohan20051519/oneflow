@@ -323,11 +323,14 @@ RABBITMQ_PASSWORD = os.environ.get("RABBITMQ_PASSWORD", "guest")
 RABBITMQ_VHOST = os.environ.get("RABBITMQ_VHOST", "/")
 AMQP_URL = os.environ.get("AMQP_URL")
 
-# Celery Configuration
-if AMQP_URL:
-    CELERY_BROKER_URL = AMQP_URL
-else:
-    CELERY_BROKER_URL = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/{RABBITMQ_VHOST}"
+# Celery Configuration (Supports Valkey/Redis for lightweight 1GB RAM profiles)
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL") or AMQP_URL
+if not CELERY_BROKER_URL:
+    redis_url = os.environ.get("REDIS_URL")
+    if redis_url:
+        CELERY_BROKER_URL = f"{redis_url.rstrip('/')}/1"
+    else:
+        CELERY_BROKER_URL = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/{RABBITMQ_VHOST}"
 
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_SERIALIZER = "json"

@@ -202,13 +202,16 @@ if [ -f "${SOURCE_DIR}/apps/api/.env" ]; then
         sed -i 's|^REDIS_URL=.*|REDIS_URL="redis://plane-redis:6379/"|' "$api_env_path"
         print_item "ok" "Fixed REDIS_URL container endpoint in apps/api/.env"
     fi
-    if grep -q 'http://localhost:9000' "${SOURCE_DIR}/apps/api/.env"; then
-        sed -i 's|http://localhost:9000|http://plane-minio:9000|g' "${SOURCE_DIR}/apps/api/.env"
-        print_item "ok" "Fixed AWS_S3_ENDPOINT_URL in apps/api/.env"
+    if ! grep -q "^CELERY_BROKER_URL=" "${SOURCE_DIR}/apps/api/.env"; then
+        echo 'CELERY_BROKER_URL="redis://plane-redis:6379/1"' >> "${SOURCE_DIR}/apps/api/.env"
+        print_item "ok" "Configured Redis as Celery broker in apps/api/.env"
+    else
+        sed -i 's|^CELERY_BROKER_URL=.*|CELERY_BROKER_URL="redis://plane-redis:6379/1"|' "${SOURCE_DIR}/apps/api/.env"
     fi
-    if ! grep -q "^AMQP_URL=" "${SOURCE_DIR}/apps/api/.env"; then
-        echo 'AMQP_URL="amqp://plane:plane@plane-mq:5672/plane"' >> "${SOURCE_DIR}/apps/api/.env"
-        print_item "ok" "Added AMQP_URL to apps/api/.env"
+    if ! grep -q "^GUNICORN_WORKERS=" "${SOURCE_DIR}/apps/api/.env"; then
+        echo 'GUNICORN_WORKERS="1"' >> "${SOURCE_DIR}/apps/api/.env"
+    else
+        sed -i 's|^GUNICORN_WORKERS=.*|GUNICORN_WORKERS="1"|' "${SOURCE_DIR}/apps/api/.env"
     fi
 fi
 
@@ -438,8 +441,6 @@ if [ "$SETUP_SUCCESS" = true ]; then
     box_row $DASH_W "     ${CLR_TEXT}God Mode (Admin):${CLR_RESET} ${CLR_MUTED}http://localhost/god-mode/${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}Spaces (Public):${CLR_RESET}  ${CLR_MUTED}http://localhost/spaces/${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}REST API:${CLR_RESET}         ${CLR_MUTED}http://localhost/api/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}MinIO Console:${CLR_RESET}    ${CLR_MUTED}http://localhost:9090${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}MinIO S3 API:${CLR_RESET}     ${CLR_MUTED}http://localhost:9000${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}Live Collab:${CLR_RESET}      ${CLR_MUTED}ws://localhost/live/ (WebSocket Engine)${CLR_RESET}"
     box_row $DASH_W ""
     box_row $DASH_W "  ${CLR_BOLD}Management Shortcuts:${CLR_RESET}"

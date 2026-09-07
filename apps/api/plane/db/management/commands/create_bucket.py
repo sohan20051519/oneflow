@@ -15,18 +15,33 @@ class Command(BaseCommand):
     help = "Create the default bucket for the instance"
 
     def handle(self, *args, **options):
-        # Create a session using the credentials from Django settings
+        endpoint_url = os.environ.get("AWS_S3_ENDPOINT_URL")
+        bucket_name = os.environ.get("AWS_S3_BUCKET_NAME")
+        use_minio = os.environ.get("USE_MINIO", "0")
+
+        # Cleanly skip if storage is disabled or not configured
+        if use_minio != "1" and not endpoint_url and not bucket_name:
+            self.stdout.write(self.style.NOTICE("S3 / MinIO storage is not configured. Skipping bucket setup."))
+            return
+
+        if not bucket_name:
+            self.stdout.write(self.style.NOTICE("AWS_S3_BUCKET_NAME is not set. Skipping bucket setup."))
+            return
+
+        # Create a session using credentials with fast connect timeout
         try:
             s3_client = boto3.client(
                 "s3",
-                endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL"),  # MinIO endpoint
-                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),  # MinIO access key
-                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),  # MinIO secret key
-                region_name=os.environ.get("AWS_REGION"),  # MinIO region
-                config=boto3.session.Config(signature_version="s3v4"),
+                endpoint_url=endpoint_url,
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+                region_name=os.environ.get("AWS_REGION"),
+                config=boto3.session.Config(
+                    signature_version="s3v4",
+                    connect_timeout=3,
+                    read_timeout=3,
+                ),
             )
-            # Get the bucket name from the environment
-            bucket_name = os.environ.get("AWS_S3_BUCKET_NAME")
             self.stdout.write(self.style.NOTICE("Checking bucket..."))
             # Check if the bucket exists
             s3_client.head_bucket(Bucket=bucket_name)

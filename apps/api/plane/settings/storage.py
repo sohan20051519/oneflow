@@ -32,7 +32,8 @@ class S3Storage(S3Boto3Storage):
         # Use the AWS_REGION environment variable for the region
         self.aws_region = os.environ.get("AWS_REGION")
         # Use the AWS_S3_ENDPOINT_URL environment variable for the endpoint URL
-        self.aws_s3_endpoint_url = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("MINIO_ENDPOINT_URL")
+        endpoint = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("MINIO_ENDPOINT_URL")
+        self.aws_s3_endpoint_url = endpoint if endpoint and endpoint.strip() else None
         # Use the SIGNED_URL_EXPIRATION environment variable for the expiration time (default: 3600 seconds)
         self.signed_url_expiration = int(os.environ.get("SIGNED_URL_EXPIRATION", "3600"))
 
@@ -49,7 +50,7 @@ class S3Storage(S3Boto3Storage):
                 aws_secret_access_key=self.aws_secret_access_key,
                 region_name=self.aws_region,
                 endpoint_url=(f"{endpoint_protocol}://{request.get_host()}" if request else self.aws_s3_endpoint_url),
-                config=boto3.session.Config(signature_version="s3v4"),
+                config=boto3.session.Config(signature_version="s3v4", connect_timeout=3, read_timeout=3),
             )
         else:
             # Create an S3 client
@@ -59,7 +60,7 @@ class S3Storage(S3Boto3Storage):
                 aws_secret_access_key=self.aws_secret_access_key,
                 region_name=self.aws_region,
                 endpoint_url=self.aws_s3_endpoint_url,
-                config=boto3.session.Config(signature_version="s3v4"),
+                config=boto3.session.Config(signature_version="s3v4", connect_timeout=3, read_timeout=3),
             )
 
     def generate_presigned_post(self, object_name, file_type, file_size, expiration=None):
@@ -92,7 +93,7 @@ class S3Storage(S3Boto3Storage):
                 ExpiresIn=expiration,
             )
         # Handle errors
-        except ClientError as e:
+        except (ClientError, Exception) as e:
             print(f"Error generating presigned POST URL: {e}")
             return None
 
@@ -132,7 +133,7 @@ class S3Storage(S3Boto3Storage):
                 ExpiresIn=expiration,
                 HttpMethod=http_method,
             )
-        except ClientError as e:
+        except (ClientError, Exception) as e:
             log_exception(e)
             return None
 
@@ -143,7 +144,7 @@ class S3Storage(S3Boto3Storage):
         """Get the metadata for an S3 object"""
         try:
             response = self.s3_client.head_object(Bucket=self.aws_storage_bucket_name, Key=object_name)
-        except ClientError as e:
+        except (ClientError, Exception) as e:
             log_exception(e)
             return None
 
@@ -163,7 +164,7 @@ class S3Storage(S3Boto3Storage):
                 CopySource={"Bucket": self.aws_storage_bucket_name, "Key": object_name},
                 Key=new_object_name,
             )
-        except ClientError as e:
+        except (ClientError, Exception) as e:
             log_exception(e)
             return None
 
@@ -188,7 +189,7 @@ class S3Storage(S3Boto3Storage):
                 ExtraArgs=extra_args,
             )
             return True
-        except ClientError as e:
+        except (ClientError, Exception) as e:
             log_exception(e)
             return False
 
@@ -200,6 +201,6 @@ class S3Storage(S3Boto3Storage):
                 Delete={"Objects": [{"Key": object_name} for object_name in object_names]},
             )
             return True
-        except ClientError as e:
+        except (ClientError, Exception) as e:
             log_exception(e)
             return False

@@ -9,6 +9,8 @@ services:
     restart: always
     env_file:
       - ./apps/web/.env
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=128"
     depends_on:
       - api
 
@@ -22,6 +24,8 @@ services:
     restart: always
     env_file:
       - ./apps/admin/.env
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=96"
     depends_on:
       - api
       - web
@@ -36,6 +40,8 @@ services:
     restart: always
     env_file:
       - ./apps/space/.env
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=96"
     depends_on:
       - api
       - web
@@ -54,14 +60,13 @@ services:
     environment:
       DATABASE_URL: "${DATABASE_URL:-postgresql://plane:plane@plane-db:5432/plane}"
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
-      AMQP_URL: "${AMQP_URL:-amqp://plane:plane@plane-mq:5672/plane}"
-      AWS_S3_ENDPOINT_URL: "${AWS_S3_ENDPOINT_URL:-http://plane-minio:9000}"
+      CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://plane-redis:6379/1}"
+      GUNICORN_WORKERS: "${GUNICORN_WORKERS:-1}"
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:3000,http://127.0.0.1}"
       ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
     depends_on:
       - plane-db
       - plane-redis
-      - plane-mq
 
   worker:
     container_name: bgworker
@@ -77,36 +82,13 @@ services:
     environment:
       DATABASE_URL: "${DATABASE_URL:-postgresql://plane:plane@plane-db:5432/plane}"
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
-      AMQP_URL: "${AMQP_URL:-amqp://plane:plane@plane-mq:5672/plane}"
-      AWS_S3_ENDPOINT_URL: "${AWS_S3_ENDPOINT_URL:-http://plane-minio:9000}"
-      CELERY_WORKERS: "${CELERY_WORKERS:-2}"
+      CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://plane-redis:6379/1}"
+      CELERY_WORKERS: "${CELERY_WORKERS:-1}"
+      CELERY_MAX_TASKS_PER_CHILD: "50"
     depends_on:
       - api
       - plane-db
       - plane-redis
-      - plane-mq
-
-  beat-worker:
-    container_name: beatworker
-    build:
-      context: ./apps/api
-      dockerfile: Dockerfile.api
-      args:
-        DOCKER_BUILDKIT: 1
-    restart: always
-    command: ./bin/docker-entrypoint-beat.sh
-    env_file:
-      - ./apps/api/.env
-    environment:
-      DATABASE_URL: "${DATABASE_URL:-postgresql://plane:plane@plane-db:5432/plane}"
-      REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
-      AMQP_URL: "${AMQP_URL:-amqp://plane:plane@plane-mq:5672/plane}"
-      AWS_S3_ENDPOINT_URL: "${AWS_S3_ENDPOINT_URL:-http://plane-minio:9000}"
-    depends_on:
-      - api
-      - plane-db
-      - plane-redis
-      - plane-mq
 
   migrator:
     container_name: plane-migrator
@@ -115,7 +97,7 @@ services:
       dockerfile: Dockerfile.api
       args:
         DOCKER_BUILDKIT: 1
-    restart: no
+    restart: "no"
     command: ./bin/docker-entrypoint-migrator.sh
     env_file:
       - ./apps/api/.env
@@ -143,6 +125,7 @@ services:
       REDIS_PORT: "${REDIS_PORT:-6379}"
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
       LIVE_SERVER_SECRET_KEY: "${LIVE_SERVER_SECRET_KEY:-secret-key}"
+      NODE_OPTIONS: "--max-old-space-size=64"
     depends_on:
       - plane-redis
       - api
@@ -151,7 +134,7 @@ services:
     container_name: plane-db
     image: postgres:15.7-alpine
     restart: always
-    command: postgres -c 'max_connections=200'
+    command: postgres -c 'max_connections=30' -c 'shared_buffers=32MB' -c 'effective_cache_size=128MB' -c 'work_mem=2MB' -c 'maintenance_work_mem=16MB' -c 'min_wal_size=32MB' -c 'max_wal_size=128MB'
     volumes:
       - pgdata:/var/lib/postgresql/data
     env_file:
@@ -166,32 +149,9 @@ services:
     container_name: plane-redis
     image: valkey/valkey:7.2.11-alpine
     restart: always
+    command: valkey-server --maxmemory 64mb --maxmemory-policy allkeys-lru
     volumes:
       - redisdata:/data
-
-  plane-mq:
-    container_name: plane-mq
-    image: rabbitmq:3.13.6-management-alpine
-    restart: always
-    env_file:
-      - .env
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-plane}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-plane}
-      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-plane}
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-
-  plane-minio:
-    container_name: plane-minio
-    image: minio/minio
-    restart: always
-    command: server /export --console-address ":9090"
-    volumes:
-      - uploads:/export
-    environment:
-      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-access-key}
-      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-secret-key}
 
   # Reverse proxy gateway
   proxy:
@@ -216,5 +176,3 @@ services:
 volumes:
   pgdata:
   redisdata:
-  uploads:
-  rabbitmq_data:
