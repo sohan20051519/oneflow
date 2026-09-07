@@ -461,13 +461,47 @@ class TUIState:
                 else:
                     c += '\nREDIS_HOST="plane-redis"\n'
                     changed = True
+
+                # Clear unexposed dev ports in container base URLs so Caddy handles all reverse proxying
+                for var_name in ["ADMIN_BASE_URL", "SPACE_BASE_URL", "APP_BASE_URL", "LIVE_BASE_URL"]:
+                    if re.search(rf'^{var_name}=.*', c, re.MULTILINE):
+                        line_match = re.search(rf'^{var_name}=(.*)', c, re.MULTILINE)
+                        if line_match and any(p in line_match.group(1) for p in [":3001", ":3002", ":3000", ":3100", ":8000"]):
+                            c = re.sub(rf'^{var_name}=.*', f'{var_name}=""', c, flags=re.MULTILINE)
+                            changed = True
+
+                if re.search(r'^WEB_URL=.*', c, re.MULTILINE):
+                    web_match = re.search(r'^WEB_URL=(.*)', c, re.MULTILINE)
+                    if web_match and any(p in web_match.group(1) for p in [":8000", ":3000"]):
+                        c = re.sub(r'^WEB_URL=.*', 'WEB_URL="http://localhost"', c, flags=re.MULTILINE)
+                        changed = True
+
                 if changed:
                     with open(api_env_path, "w") as f:
                         f.write(c)
-                    self.add_activity("ok", "Optimized apps/api/.env (Redis Celery broker, 1 worker)")
-                    self.log("env", "Configured Redis broker & low-memory settings in apps/api/.env")
+                    self.add_activity("ok", "Optimized apps/api/.env (Redis Celery broker, reverse proxy URLs)")
+                    self.log("env", "Configured Redis broker & proxy settings in apps/api/.env")
             except Exception as e:
                 self.log("env", f"Warning: could not sanitize apps/api/.env: {e}")
+
+        # Sanitize frontend .env files to use relative proxy URLs
+        for frontend_app in ["admin", "web", "space"]:
+            fe_env_path = os.path.join(self.source_dir, f"apps/{frontend_app}/.env")
+            if os.path.isfile(fe_env_path):
+                try:
+                    with open(fe_env_path, "r") as f:
+                        fe_content = f.read()
+                    fe_changed = False
+                    for p in ["http://localhost:8000", "http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3100"]:
+                        if p in fe_content:
+                            fe_content = fe_content.replace(f'"{p}"', '""').replace(f"'{p}'", '""').replace(p, "")
+                            fe_changed = True
+                    if fe_changed:
+                        with open(fe_env_path, "w") as f:
+                            f.write(fe_content)
+                        self.log("env", f"Sanitized apps/{frontend_app}/.env for reverse proxy relative URLs")
+                except Exception as e:
+                    self.log("env", f"Warning: could not sanitize apps/{frontend_app}/.env: {e}")
 
         live_env_path = os.path.join(self.source_dir, "apps/live/.env")
         if os.path.isfile(live_env_path):

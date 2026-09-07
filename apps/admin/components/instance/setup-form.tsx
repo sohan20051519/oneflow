@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 // icons
 import { Eye, EyeOff } from "lucide-react";
@@ -68,6 +68,7 @@ export function InstanceSetupForm() {
   const errorCode = searchParams?.get("error_code") || undefined;
   const errorMessage = searchParams?.get("error_message") || undefined;
   // state
+  const formRef = useRef<HTMLFormElement>(null);
   const [showPassword, setShowPassword] = useState({
     password: false,
     retypePassword: false,
@@ -83,6 +84,31 @@ export function InstanceSetupForm() {
 
   const handleFormChange = (key: keyof TFormData, value: string | boolean) =>
     setFormData((prev) => ({ ...prev, [key]: value }));
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (isSubmitting || !formRef.current) return;
+    setIsSubmitting(true);
+    try {
+      let token = csrfToken;
+      if (!token) {
+        const data = await authService.requestCSRFToken();
+        if (data?.csrf_token) {
+          token = data.csrf_token;
+          setCsrfToken(data.csrf_token);
+        }
+      }
+      if (token && formRef.current) {
+        const csrfInput = formRef.current.querySelector('input[name="csrfmiddlewaretoken"]') as HTMLInputElement;
+        if (csrfInput) csrfInput.value = token;
+      }
+    } catch {
+      // Continue submitting so backend can respond with appropriate status
+    }
+    if (formRef.current) {
+      formRef.current.submit();
+    }
+  };
 
   useEffect(() => {
     if (csrfToken === undefined)
@@ -121,7 +147,6 @@ export function InstanceSetupForm() {
 
   const isButtonDisabled = useMemo(
     () =>
-      !isSubmitting &&
       formData.first_name &&
       formData.email &&
       formData.password &&
@@ -129,7 +154,7 @@ export function InstanceSetupForm() {
       formData.password === formData.confirm_password
         ? false
         : true,
-    [formData.confirm_password, formData.email, formData.first_name, formData.password, isSubmitting]
+    [formData.confirm_password, formData.email, formData.first_name, formData.password]
   );
 
   const password = formData?.password ?? "";
@@ -151,11 +176,11 @@ export function InstanceSetupForm() {
               <Banner type="error" message={errorData?.message} />
             )}
           <form
+            ref={formRef}
             className="space-y-4"
             method="POST"
             action={`${API_BASE_URL}/api/instances/admins/sign-up/`}
-            onSubmit={() => setIsSubmitting(true)}
-            onError={() => setIsSubmitting(false)}
+            onSubmit={handleSubmit}
           >
             <input type="hidden" name="csrfmiddlewaretoken" value={csrfToken} />
             <input type="hidden" name="is_telemetry_enabled" value={formData.is_telemetry_enabled ? "True" : "False"} />

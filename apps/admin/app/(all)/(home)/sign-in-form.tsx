@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 // plane internal packages
@@ -56,6 +56,7 @@ export function InstanceSignInForm() {
   const errorCode = searchParams.get("error_code") || undefined;
   const errorMessage = searchParams.get("error_message") || undefined;
   // state
+  const formRef = useRef<HTMLFormElement>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [csrfToken, setCsrfToken] = useState<string | undefined>(undefined);
   const [formData, setFormData] = useState<TFormData>(defaultFromData);
@@ -64,6 +65,31 @@ export function InstanceSignInForm() {
 
   const handleFormChange = (key: keyof TFormData, value: string | boolean) =>
     setFormData((prev) => ({ ...prev, [key]: value }));
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (isSubmitting || !formRef.current) return;
+    setIsSubmitting(true);
+    try {
+      let token = csrfToken;
+      if (!token) {
+        const data = await authService.requestCSRFToken();
+        if (data?.csrf_token) {
+          token = data.csrf_token;
+          setCsrfToken(data.csrf_token);
+        }
+      }
+      if (token && formRef.current) {
+        const csrfInput = formRef.current.querySelector('input[name="csrfmiddlewaretoken"]') as HTMLInputElement;
+        if (csrfInput) csrfInput.value = token;
+      }
+    } catch {
+      // Continue submitting so backend can respond with appropriate status
+    }
+    if (formRef.current) {
+      formRef.current.submit();
+    }
+  };
 
   useEffect(() => {
     if (csrfToken === undefined)
@@ -95,8 +121,8 @@ export function InstanceSignInForm() {
   }, [errorCode, errorMessage]);
 
   const isButtonDisabled = useMemo(
-    () => (!isSubmitting && formData.email && formData.password ? false : true),
-    [formData.email, formData.password, isSubmitting]
+    () => (formData.email && formData.password ? false : true),
+    [formData.email, formData.password]
   );
 
   useEffect(() => {
@@ -118,11 +144,11 @@ export function InstanceSignInForm() {
             subHeading="Configure instance-wide settings to secure your instance"
           />
           <form
+            ref={formRef}
             className="space-y-4"
             method="POST"
             action={`${API_BASE_URL}/api/instances/admins/sign-in/`}
-            onSubmit={() => setIsSubmitting(true)}
-            onError={() => setIsSubmitting(false)}
+            onSubmit={handleSubmit}
           >
             {errorData.type && errorData?.message ? (
               <Banner type="error" message={errorData?.message} />

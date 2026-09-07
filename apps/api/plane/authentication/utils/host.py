@@ -20,8 +20,18 @@ def base_host(
     is_app: bool = False,
 ) -> str:
     """Utility function to return host / origin from the request"""
-    # Calculate the base origin from request
-    base_origin = settings.WEB_URL or settings.APP_BASE_URL
+    # Prefer actual request origin if available
+    request_origin = None
+    if request:
+        try:
+            scheme = "https" if request.is_secure() else "http"
+            host = request.get_host()
+            if host:
+                request_origin = f"{scheme}://{host}"
+        except Exception:
+            request_origin = None
+
+    base_origin = request_origin or settings.WEB_URL or settings.APP_BASE_URL or "http://localhost"
 
     # Admin redirection
     if is_admin:
@@ -33,8 +43,9 @@ def base_host(
         if not admin_base_path.endswith("/"):
             admin_base_path += "/"
 
-        if settings.ADMIN_BASE_URL:
-            return settings.ADMIN_BASE_URL + admin_base_path
+        admin_base_url = settings.ADMIN_BASE_URL
+        if admin_base_url and not any(dev_port in admin_base_url for dev_port in [":3001", ":8000"]):
+            return admin_base_url + admin_base_path
         else:
             return base_origin + admin_base_path
 
@@ -48,15 +59,17 @@ def base_host(
         if not space_base_path.endswith("/"):
             space_base_path += "/"
 
-        if settings.SPACE_BASE_URL:
-            return settings.SPACE_BASE_URL + space_base_path
+        space_base_url = settings.SPACE_BASE_URL
+        if space_base_url and not any(dev_port in space_base_url for dev_port in [":3002", ":8000"]):
+            return space_base_url + space_base_path
         else:
             return base_origin + space_base_path
 
     # App Redirection
     if is_app:
-        if settings.APP_BASE_URL:
-            return settings.APP_BASE_URL
+        app_base_url = settings.APP_BASE_URL
+        if app_base_url and not any(dev_port in app_base_url for dev_port in [":3000", ":8000"]):
+            return app_base_url
         else:
             return base_origin
 

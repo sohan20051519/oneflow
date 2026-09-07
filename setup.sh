@@ -213,7 +213,21 @@ if [ -f "${SOURCE_DIR}/apps/api/.env" ]; then
     else
         sed -i 's|^GUNICORN_WORKERS=.*|GUNICORN_WORKERS="1"|' "${SOURCE_DIR}/apps/api/.env"
     fi
+
+    # Clear unexposed dev ports in container base URLs so Caddy handles all reverse proxying
+    sed -i 's|^ADMIN_BASE_URL=.*:3001.*|ADMIN_BASE_URL=""|' "${api_env_path}" 2>/dev/null || true
+    sed -i 's|^SPACE_BASE_URL=.*:3002.*|SPACE_BASE_URL=""|' "${api_env_path}" 2>/dev/null || true
+    sed -i 's|^APP_BASE_URL=.*:3000.*|APP_BASE_URL=""|' "${api_env_path}" 2>/dev/null || true
+    sed -i 's|^LIVE_BASE_URL=.*:3100.*|LIVE_BASE_URL=""|' "${api_env_path}" 2>/dev/null || true
+    sed -i 's|^WEB_URL=.*:3000.*|WEB_URL="http://localhost"|' "${api_env_path}" 2>/dev/null || true
 fi
+
+# Sanitize frontend .env files for reverse proxy relative URLs
+for fe in admin web space; do
+    if [ -f "${SOURCE_DIR}/apps/${fe}/.env" ]; then
+        sed -i 's|http://localhost:8000||g; s|http://localhost:3000||g; s|http://localhost:3001||g; s|http://localhost:3002||g; s|http://localhost:3100||g' "${SOURCE_DIR}/apps/${fe}/.env"
+    fi
+done
 
 # Auto-sanitize apps/live/.env for container networking
 if [ -f "${SOURCE_DIR}/apps/live/.env" ]; then
