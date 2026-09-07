@@ -42,6 +42,17 @@ SETUP_SUCCESS=true
 # Determine directory paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Pre-authenticate sudo cleanly in standard terminal mode before launching TUI
+if ! docker info >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    if ! sudo -n docker info >/dev/null 2>&1; then
+        echo ""
+        echo -e " ${CLR_PRIMARY}${CLR_BOLD}●${CLR_RESET} ${CLR_BOLD}Sudo privileges required for Docker container management.${CLR_RESET}"
+        echo -e "   Please enter your sudo password if prompted below:"
+        sudo -v || exit 1
+        echo ""
+    fi
+fi
+
 # Launch interactive Dual-Pane TUI with Live Logs & Progress Bar if python3 is available
 if [ "$1" != "--no-tui" ] && command -v python3 >/dev/null 2>&1 && [ -f "${SCRIPT_DIR}/setup.py" ]; then
     exec python3 "${SCRIPT_DIR}/setup.py" "$@"

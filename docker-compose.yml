@@ -79,6 +79,7 @@ services:
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
       AMQP_URL: "${AMQP_URL:-amqp://plane:plane@plane-mq:5672/plane}"
       AWS_S3_ENDPOINT_URL: "${AWS_S3_ENDPOINT_URL:-http://plane-minio:9000}"
+      CELERY_WORKERS: "${CELERY_WORKERS:-2}"
     depends_on:
       - api
       - plane-db
@@ -150,7 +151,7 @@ services:
     container_name: plane-db
     image: postgres:15.7-alpine
     restart: always
-    command: postgres -c 'max_connections=1000'
+    command: postgres -c 'max_connections=200'
     volumes:
       - pgdata:/var/lib/postgresql/data
     env_file:

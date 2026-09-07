@@ -736,7 +736,19 @@ def detect_server_ip(deploy_dir: str, source_dir: str) -> str:
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     is_tty = sys.stdout.isatty()
-    
+    # Pre-authenticate sudo cleanly before altering termios or entering alternate screen buffer
+    try:
+        r_docker = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if r_docker.returncode != 0 and shutil.which("sudo"):
+            r_sudo_check = subprocess.run(["sudo", "-n", "docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if r_sudo_check.returncode != 0:
+                print(f"\n {CLR_PRIMARY}{CLR_BOLD}●{CLR_RESET} {CLR_BOLD}Sudo privileges required for Docker container management.{CLR_RESET}")
+                print(f"   Please enter your sudo password if prompted below:\n")
+                subprocess.run(["sudo", "-v"], check=True)
+                print("")
+    except Exception:
+        pass
+
     # Suppress terminal echo on stdin so mouse scrolling and arrow keys
     # never leak ^[[A / ^[[B escape sequences onto the screen
     old_termios = None
