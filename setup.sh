@@ -327,38 +327,84 @@ print_step_done
 # ==============================================================================
 print_step "STEP 5/5" "Verifying Service Health & Readiness"
 
-print_item "info" "Awaiting service ports and database initialization..."
+print_item "info" "Awaiting database migrations and service readiness..."
 
-APP_READY=false
-RETRIES=45
-WAIT_SECONDS=2
-
-for i in $(seq 1 $RETRIES); do
-    # Check if proxy is answering on port 80
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:80/" 2>/dev/null || echo "000")
-    API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:80/api/instances/" 2>/dev/null || echo "000")
-
-    if [ "$HTTP_STATUS" = "200" ] && [ "$API_STATUS" = "200" ]; then
-        APP_READY=true
+# --- Phase 1: Wait for migrator to complete ---
+MIGRATOR_OK=false
+MIGRATOR_RETRIES=60
+for i in $(seq 1 $MIGRATOR_RETRIES); do
+    MIGRATOR_STATUS=$(${DOCKER_CMD} inspect --format='{{.State.Status}}' plane-migrator 2>/dev/null || echo "missing")
+    if [ "$MIGRATOR_STATUS" = "exited" ]; then
+        MIGRATOR_EXIT=$(${DOCKER_CMD} inspect --format='{{.State.ExitCode}}' plane-migrator 2>/dev/null || echo "1")
+        if [ "$MIGRATOR_EXIT" = "0" ]; then
+            MIGRATOR_OK=true
+            print_item "ok" "Database migrations completed successfully"
+        else
+            print_item "fail" "Database migrations FAILED (exit code ${MIGRATOR_EXIT})"
+            print_item "info" "Check logs: ${DOCKER_CMD} logs plane-migrator"
+            SETUP_SUCCESS=false
+        fi
         break
     fi
-
-    sleep $WAIT_SECONDS
+    sleep 2
 done
+if [ "$MIGRATOR_OK" = false ] && [ "$SETUP_SUCCESS" = true ]; then
+    print_item "warn" "Migrator still running after $((MIGRATOR_RETRIES * 2))s; check logs"
+fi
 
-if [ "$APP_READY" = true ]; then
-    print_item "ok" "Frontend web gateway responding (HTTP 200)"
-    print_item "ok" "Backend API and database operational (HTTP 200)"
-    print_item "ok" "All core application components are healthy"
-else
-    # Check if frontend at least is answering
-    if [ "$HTTP_STATUS" = "200" ]; then
+# --- Phase 2: Wait for API to be healthy (not in restart loop) ---
+APP_READY=false
+if [ "$MIGRATOR_OK" = true ]; then
+    RETRIES=30
+    WAIT_SECONDS=3
+    for i in $(seq 1 $RETRIES); do
+        # Check that api container is running (not restarting)
+        API_RUNNING=$(${DOCKER_CMD} inspect --format='{{.State.Status}}' api 2>/dev/null || echo "missing")
+        API_RESTARTS=$(${DOCKER_CMD} inspect --format='{{.RestartCount}}' api 2>/dev/null || echo "0")
+
+        if [ "$API_RUNNING" = "running" ]; then
+            # Check HTTP endpoints
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:80/" 2>/dev/null || echo "000")
+            API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:80/api/instances/" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_STATUS" = "200" ] && [ "$API_STATUS" = "200" ]; then
+                APP_READY=true
+                break
+            elif [ "$HTTP_STATUS" = "200" ]; then
+                # Frontend is up, API might still be starting
+                if [ $i -ge $((RETRIES - 5)) ]; then
+                    APP_READY=true
+                    break
+                fi
+            fi
+        fi
+        sleep $WAIT_SECONDS
+    done
+
+    # --- Phase 3: Verify no critical containers are in restart loops ---
+    RESTART_ISSUES=false
+    for svc in api bgworker; do
+        SVC_STATUS=$(${DOCKER_CMD} inspect --format='{{.State.Status}}' "$svc" 2>/dev/null || echo "missing")
+        SVC_RESTARTS=$(${DOCKER_CMD} inspect --format='{{.RestartCount}}' "$svc" 2>/dev/null || echo "0")
+        if [ "$SVC_STATUS" = "restarting" ] || [ "$SVC_RESTARTS" -gt 2 ] 2>/dev/null; then
+            print_item "fail" "Service '${svc}' is crash-looping (restarts: ${SVC_RESTARTS})"
+            print_item "info" "Check logs: ${DOCKER_CMD} logs ${svc}"
+            RESTART_ISSUES=true
+            SETUP_SUCCESS=false
+        fi
+    done
+
+    if [ "$APP_READY" = true ] && [ "$RESTART_ISSUES" = false ]; then
         print_item "ok" "Frontend web gateway responding (HTTP 200)"
-        print_item "info" "Backend API completing final startup migrations in background"
-        APP_READY=true
+        print_item "ok" "Backend API and database operational (HTTP 200)"
+        print_item "ok" "All core application components are healthy"
+    elif [ "$RESTART_ISSUES" = true ]; then
+        print_item "fail" "Critical backend services are failing — deployment is NOT healthy"
     else
         print_item "warn" "Services started; initialization still in progress"
     fi
+else
+    print_item "warn" "Skipped API health checks due to migrator failure"
 fi
 
 print_step_done
