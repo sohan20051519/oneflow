@@ -645,11 +645,45 @@ class TUIState:
 
     def _step_5_health(self):
         self.set_step(4)
-        self.set_progress(85, "Awaiting service ports and database initialization...")
-        self.add_activity("info", "Probing service endpoints...")
-        self.log("health", "Initiating health checks on http://127.0.0.1:80/ and backend API")
+        self.set_progress(82, "Awaiting database migrations and service readiness...")
+        self.add_activity("info", "Checking database migrations...")
+        self.log("health", "Verifying plane-migrator completion")
 
-        retries = 45
+        # --- Phase 1: Verify Migrator Exit Code ---
+        migrator_ok = False
+        migrator_retries = 60
+        for i in range(1, migrator_retries + 1):
+            stat_res = subprocess.run(self.docker_cmd + ["inspect", "--format", "{{.State.Status}}", "plane-migrator"],
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            status = stat_res.stdout.strip()
+            if status == "exited":
+                code_res = subprocess.run(self.docker_cmd + ["inspect", "--format", "{{.State.ExitCode}}", "plane-migrator"],
+                                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                exit_code = code_res.stdout.strip()
+                if exit_code == "0":
+                    migrator_ok = True
+                    self.add_activity("ok", "Database migrations completed successfully (exit code 0)")
+                    self.log("health", "plane-migrator completed successfully (exit code 0)")
+                else:
+                    self.add_activity("fail", f"Database migrations FAILED (exit code {exit_code})")
+                    self.log("health", f"plane-migrator failed with exit code {exit_code}; inspect logs: docker logs plane-migrator")
+                    self.setup_success = False
+                    return
+                break
+            time.sleep(2)
+
+        if not migrator_ok:
+            self.add_activity("fail", "Database migrations timed out waiting for completion")
+            self.log("health", "plane-migrator did not exit within timeout period")
+            self.setup_success = False
+            return
+
+        # --- Phase 2: Probe Service Endpoints & Check API/Worker Health ---
+        self.set_progress(88, "Probing service endpoints and container health...")
+        self.add_activity("info", "Probing gateway and backend REST API...")
+        self.log("health", "Initiating health checks on http://127.0.0.1:80/ and backend /api/instances/")
+
+        retries = 35
         app_ready = False
         api_ready = False
         http_code = 0
@@ -657,7 +691,7 @@ class TUIState:
 
         for i in range(1, retries + 1):
             self.log("health", f"Probing gateway and backend (attempt {i}/{retries})...")
-            # 1. Probe Web Gateway
+            # Probe Web Gateway
             try:
                 req = urllib.request.Request("http://127.0.0.1:80/", headers={"User-Agent": "oneflow-healthcheck"})
                 with urllib.request.urlopen(req, timeout=2) as resp:
@@ -667,7 +701,7 @@ class TUIState:
             except Exception:
                 http_code = 0
 
-            # 2. Probe Backend REST API endpoint directly through gateway
+            # Probe Backend REST API endpoint directly through gateway
             try:
                 api_req = urllib.request.Request("http://127.0.0.1:80/api/instances/", headers={"User-Agent": "oneflow-healthcheck"})
                 with urllib.request.urlopen(api_req, timeout=2) as resp:
@@ -677,29 +711,50 @@ class TUIState:
             except Exception:
                 api_code = 0
 
-            if http_code in [200, 301, 302] and api_code in [200, 201, 401, 403, 404]:
+            if http_code in [200, 301, 302] and api_code == 200:
                 app_ready = True
                 api_ready = True
                 self.log("health", f"Gateway (HTTP {http_code}) and Backend API (HTTP {api_code}) operational")
                 break
             elif http_code in [200, 301, 302]:
-                self.log("health", f"Gateway online (HTTP {http_code}); awaiting backend migrations (API HTTP {api_code})...")
+                self.log("health", f"Gateway online (HTTP {http_code}); awaiting backend initialization (API HTTP {api_code})...")
 
             time.sleep(2)
 
-        if app_ready and api_ready:
-            self.add_activity("ok", f"Frontend gateway responding (HTTP {http_code})")
-            self.add_activity("ok", f"Backend API & database operational (HTTP {api_code})")
-            self.add_activity("ok", "All application components online")
-            self.log("health", "Application components fully verified and healthy")
-        elif app_ready:
-            self.add_activity("warn", f"Gateway online; backend migrations finalizing (HTTP {api_code})")
-            self.log("health", f"Gateway responded HTTP {http_code} but API returned HTTP {api_code}")
-        else:
-            self.add_activity("warn", "Services active; background startup continuing")
-            self.log("health", "Probe timed out; services completing startup in background")
+        # --- Phase 3: Check for Container Crash Loops ---
+        restart_issues = False
+        for svc in ["api", "bgworker"]:
+            stat_res = subprocess.run(self.docker_cmd + ["inspect", "--format", "{{.State.Status}}", svc],
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            status = stat_res.stdout.strip()
+            rest_res = subprocess.run(self.docker_cmd + ["inspect", "--format", "{{.RestartCount}}", svc],
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            try:
+                restarts = int(rest_res.stdout.strip())
+            except ValueError:
+                restarts = 0
 
-        self.set_progress(100, "one flow deployment complete!")
+            if status == "restarting" or restarts > 2:
+                self.add_activity("fail", f"Service '{svc}' is crash-looping (restarts: {restarts})")
+                self.log("health", f"Service '{svc}' status={status}, restarts={restarts}; check: docker logs {svc}")
+                restart_issues = True
+                self.setup_success = False
+
+        if app_ready and api_ready and not restart_issues:
+            self.add_activity("ok", f"Frontend gateway responding (HTTP {http_code})")
+            self.add_activity("ok", f"Backend API and database operational (HTTP {api_code})")
+            self.add_activity("ok", "All application components online and verified")
+            self.log("health", "Application components fully verified and healthy")
+        elif restart_issues:
+            self.add_activity("fail", "Critical backend services are failing — deployment is NOT healthy")
+            self.log("health", "Backend containers failing/restarting; deployment marked as failed")
+            self.setup_success = False
+        else:
+            self.add_activity("fail", f"Backend API failed health check (HTTP {api_code})")
+            self.log("health", f"Health check failed: Gateway={http_code}, API={api_code}")
+            self.setup_success = False
+
+        self.set_progress(100, "one flow deployment verification complete")
         time.sleep(0.6)
 
 def detect_server_ip(deploy_dir: str, source_dir: str) -> str:

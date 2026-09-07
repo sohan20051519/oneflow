@@ -65,8 +65,12 @@ services:
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:3000,http://127.0.0.1}"
       ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
     depends_on:
-      - plane-db
-      - plane-redis
+      plane-db:
+        condition: service_healthy
+      plane-redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
 
   worker:
     container_name: bgworker
@@ -86,9 +90,12 @@ services:
       CELERY_WORKERS: "${CELERY_WORKERS:-1}"
       CELERY_MAX_TASKS_PER_CHILD: "50"
     depends_on:
-      - api
-      - plane-db
-      - plane-redis
+      api:
+        condition: service_started
+      plane-db:
+        condition: service_healthy
+      plane-redis:
+        condition: service_healthy
 
   migrator:
     container_name: plane-migrator
@@ -105,8 +112,10 @@ services:
       DATABASE_URL: "${DATABASE_URL:-postgresql://plane:plane@plane-db:5432/plane}"
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
     depends_on:
-      - plane-db
-      - plane-redis
+      plane-db:
+        condition: service_healthy
+      plane-redis:
+        condition: service_healthy
 
   live:
     container_name: plane-live
@@ -127,8 +136,10 @@ services:
       LIVE_SERVER_SECRET_KEY: "${LIVE_SERVER_SECRET_KEY:-secret-key}"
       NODE_OPTIONS: "--max-old-space-size=128"
     depends_on:
-      - plane-redis
-      - api
+      plane-redis:
+        condition: service_healthy
+      api:
+        condition: service_started
 
   plane-db:
     container_name: plane-db
@@ -144,6 +155,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-plane}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plane}
       PGDATA: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-plane} -d $${POSTGRES_DB:-plane}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   plane-redis:
     container_name: plane-redis
@@ -152,6 +169,12 @@ services:
     command: valkey-server --maxmemory 64mb --maxmemory-policy allkeys-lru
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
 
   # Reverse proxy gateway
   proxy:

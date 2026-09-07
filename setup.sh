@@ -370,12 +370,6 @@ if [ "$MIGRATOR_OK" = true ]; then
             if [ "$HTTP_STATUS" = "200" ] && [ "$API_STATUS" = "200" ]; then
                 APP_READY=true
                 break
-            elif [ "$HTTP_STATUS" = "200" ]; then
-                # Frontend is up, API might still be starting
-                if [ $i -ge $((RETRIES - 5)) ]; then
-                    APP_READY=true
-                    break
-                fi
             fi
         fi
         sleep $WAIT_SECONDS
@@ -401,7 +395,9 @@ if [ "$MIGRATOR_OK" = true ]; then
     elif [ "$RESTART_ISSUES" = true ]; then
         print_item "fail" "Critical backend services are failing — deployment is NOT healthy"
     else
-        print_item "warn" "Services started; initialization still in progress"
+        print_item "fail" "Backend API failed readiness check (API HTTP: ${API_STATUS})"
+        print_item "info" "Check logs: ${DOCKER_CMD} logs api"
+        SETUP_SUCCESS=false
     fi
 else
     print_item "warn" "Skipped API health checks due to migrator failure"
