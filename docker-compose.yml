@@ -125,7 +125,7 @@ services:
       REDIS_PORT: "${REDIS_PORT:-6379}"
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
       LIVE_SERVER_SECRET_KEY: "${LIVE_SERVER_SECRET_KEY:-secret-key}"
-      NODE_OPTIONS: "--max-old-space-size=64"
+      NODE_OPTIONS: "--max-old-space-size=128"
     depends_on:
       - plane-redis
       - api
