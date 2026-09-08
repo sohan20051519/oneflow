@@ -47,6 +47,7 @@ services:
       - web
 
   api:
+    image: oneflow-api:latest
     container_name: api
     build:
       context: ./apps/api
@@ -73,6 +74,7 @@ services:
         condition: service_completed_successfully
 
   worker:
+    image: oneflow-worker:latest
     container_name: bgworker
     build:
       context: ./apps/api
@@ -98,6 +100,7 @@ services:
         condition: service_healthy
 
   migrator:
+    image: oneflow-migrator:latest
     container_name: plane-migrator
     build:
       context: ./apps/api
