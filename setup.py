@@ -935,31 +935,109 @@ def main():
         os.environ["APP_PROTOCOL"] = final_scheme
         os.environ["ONEFLOW_DOMAIN_CONFIGURED"] = "1"
 
-        # Persist to plane.env and .env files
-        for target_env in [
-            os.path.join(deploy_dir, "plane.env"),
-            os.path.join(os.path.dirname(deploy_dir), "plane.env"),
-            os.path.join(script_dir, ".env"),
-            os.path.join(deploy_dir, ".env"),
-        ]:
-            if os.path.isfile(target_env):
-                try:
-                    with open(target_env, "r") as f:
-                        env_c = f.read()
-                    if "ONEFLOW_DOMAIN=" in env_c:
-                        env_c = re.sub(r'^ONEFLOW_DOMAIN=.*', f'ONEFLOW_DOMAIN={final_origin}', env_c, flags=re.MULTILINE)
-                    else:
-                        env_c += f'\nONEFLOW_DOMAIN={final_origin}\n'
-                    if "DOMAIN_NAME=" in env_c:
-                        env_c = re.sub(r'^DOMAIN_NAME=.*', f'DOMAIN_NAME={final_host}', env_c, flags=re.MULTILINE)
-                    else:
-                        env_c += f'\nDOMAIN_NAME={final_host}\n'
-                    with open(target_env, "w") as f:
-                        f.write(env_c)
-                except Exception:
-                    pass
+        # ── Comprehensive domain sync ──────────────────────────────────────
+        def _upsert(content: str, key: str, val: str) -> str:
+            """Update key=val line in env file content, or append if missing."""
+            if re.search(rf'^{re.escape(key)}=', content, re.MULTILINE):
+                return re.sub(rf'^{re.escape(key)}=.*', f'{key}={val}', content, flags=re.MULTILINE)
+            return content + f'\n{key}={val}\n'
+
+        def _replace_if_present(content: str, key: str, val: str) -> str:
+            """Update key=val only when the key already exists."""
+            if re.search(rf'^{re.escape(key)}=', content, re.MULTILINE):
+                return re.sub(rf'^{re.escape(key)}=.*', f'{key}={val}', content, flags=re.MULTILINE)
+            return content
+
+        def sync_domain_in_file(env_path: str) -> None:
+            if not os.path.isfile(env_path):
+                return
+            try:
+                with open(env_path, "r") as fh:
+                    c = fh.read()
+
+                # Core identity — always upserted
+                c = _upsert(c, "ONEFLOW_DOMAIN", final_origin)
+                c = _upsert(c, "DOMAIN_NAME", final_host)
+
+                # Alias keys — update only if present
+                c = _replace_if_present(c, "APP_DOMAIN",   final_host)
+                c = _replace_if_present(c, "DOMAIN",       final_host)
+                c = _replace_if_present(c, "APP_PROTOCOL", final_scheme)
+
+                # Public URL (literal value so containers see it resolved)
+                c = _replace_if_present(c, "WEB_URL", final_origin)
+
+                # CORS / CSRF
+                cors_val = final_origin
+                if final_scheme == "https":
+                    cors_val = f"{final_origin},http://{final_host}"
+                c = _replace_if_present(c, "CORS_ALLOWED_ORIGINS", cors_val)
+                c = _replace_if_present(c, "CSRF_TRUSTED_ORIGINS",  final_origin)
+
+                # Webhook allowlist
+                c = _replace_if_present(c, "WEBHOOK_ALLOWED_HOSTS", final_origin)
+
+                # Silo integration callback (only when currently empty)
+                m_icb = re.search(r'^INTEGRATION_CALLBACK_BASE_URL=(.*)', c, re.MULTILINE)
+                if m_icb and not m_icb.group(1).strip().strip('"').strip("'"):
+                    c = _replace_if_present(c, "INTEGRATION_CALLBACK_BASE_URL", final_origin)
+
+                # SMTP domain placeholder — hostname only, update only if default
+                m_smtp = re.search(r'^SMTP_DOMAIN=(.*)', c, re.MULTILINE)
+                if m_smtp:
+                    cur_smtp = m_smtp.group(1).strip().strip('"').strip("'")
+                    if cur_smtp in ("0.0.0.0", "example.com", ""):
+                        c = _replace_if_present(c, "SMTP_DOMAIN", final_host)
+
+                # PI OAuth redirect URI (only when empty)
+                m_pi = re.search(r'^PLANE_OAUTH_REDIRECT_URI=(.*)', c, re.MULTILINE)
+                if m_pi and not m_pi.group(1).strip().strip('"').strip("'"):
+                    c = _replace_if_present(c, "PLANE_OAUTH_REDIRECT_URI",
+                                            f"{final_origin}/pi/api/v1/oauth/callback/")
+
+                # Keycloak / OIDC redirect URIs
+                c = _replace_if_present(c, "KEYCLOAK_REDIRECT_URI",
+                                        f"{final_origin}/auth/oidc/callback/")
+                c = _replace_if_present(c, "KEYCLOAK_POST_LOGOUT_REDIRECT_URI",
+                                        f"{final_origin}/")
+
+                # Caddy SITE_ADDRESS
+                if re.search(r'^SITE_ADDRESS=', c, re.MULTILINE):
+                    site_addr = final_host if final_scheme == "https" else ":80"
+                    c = _replace_if_present(c, "SITE_ADDRESS", site_addr)
+
+                with open(env_path, "w") as fh:
+                    fh.write(c)
+            except Exception:
+                pass  # non-fatal
+
+        def sync_all_domain_vars() -> int:
+            targets = [
+                os.path.join(deploy_dir, "plane.env"),
+                os.path.join(deploy_dir, ".env"),
+                os.path.join(os.path.dirname(deploy_dir), "plane.env"),
+                os.path.join(os.path.dirname(deploy_dir), ".env"),
+                os.path.join(script_dir, ".env"),
+                os.path.join(deploy_dir, ".config.env"),
+                os.path.join(script_dir, "apps", "api",   ".env"),
+                os.path.join(script_dir, "apps", "web",   ".env"),
+                os.path.join(script_dir, "apps", "space", ".env"),
+                os.path.join(script_dir, "apps", "admin", ".env"),
+                os.path.join(script_dir, "apps", "live",  ".env"),
+                os.path.join(script_dir, "deployments", "cli", "community", "variables.env"),
+                os.path.join(script_dir, "deployments", "aio", "community", "variables.env"),
+            ]
+            synced = 0
+            for t in targets:
+                if os.path.isfile(t):
+                    sync_domain_in_file(t)
+                    synced += 1
+            return synced
+
+        synced_count = sync_all_domain_vars()
 
         print(f"\n {CLR_SUCCESS}✓{CLR_RESET}  {CLR_BOLD}Deployment domain configured:{CLR_RESET} {CLR_PRIMARY}{final_origin}{CLR_RESET} (host: {final_host})")
+        print(f" {CLR_SUCCESS}✓{CLR_RESET}  Domain propagated to {CLR_BOLD}{synced_count}{CLR_RESET} environment files")
         print(f" {CLR_MUTED}Starting deployment setup...{CLR_RESET}\n")
         time.sleep(0.5)
 

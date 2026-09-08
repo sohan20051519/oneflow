@@ -358,36 +358,168 @@ export WEB_URL="${FINAL_ORIGIN}"
 export APP_PROTOCOL="${FINAL_SCHEME}"
 export ONEFLOW_DOMAIN_CONFIGURED=1
 
-# Persist to plane.env if file exists
-update_env_domain() {
-    local env_file="$1"
-    if [ -f "$env_file" ]; then
-        if grep -q "^ONEFLOW_DOMAIN=" "$env_file"; then
-            sed -i "s|^ONEFLOW_DOMAIN=.*|ONEFLOW_DOMAIN=${FINAL_ORIGIN}|" "$env_file"
+# ---------------------------------------------------------------------------
+# Comprehensive domain sync — updates EVERY domain-dependent variable across
+# ALL env files (inside and outside containers) whenever the user sets a domain.
+# ---------------------------------------------------------------------------
+
+# Helper: upsert a key=value pair in an env file (update if exists, append if not)
+_upsert_env() {
+    local file="$1" key="$2" val="$3"
+    [ -f "$file" ] || return 0
+    if grep -q "^${key}=" "$file" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+    else
+        echo "${key}=${val}" >> "$file"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# sync_domain_in_file <env_file>
+#   Updates every domain-sensitive key in a single env file.
+#   Safe to call on any env file — keys not present are silently skipped
+#   unless they are core identity keys (ONEFLOW_DOMAIN / DOMAIN_NAME) which
+#   are always upserted.
+# ---------------------------------------------------------------------------
+sync_domain_in_file() {
+    local f="$1"
+    [ -f "$f" ] || return 0
+
+    # ── Core identity keys (always upserted) ────────────────────────────────
+    _upsert_env "$f" "ONEFLOW_DOMAIN"  "${FINAL_ORIGIN}"
+    _upsert_env "$f" "DOMAIN_NAME"     "${FINAL_HOST}"
+
+    # ── Domain alias keys (updated only if already present) ─────────────────
+    grep -q "^APP_DOMAIN="   "$f" 2>/dev/null && sed -i "s|^APP_DOMAIN=.*|APP_DOMAIN=${FINAL_HOST}|"   "$f"
+    grep -q "^DOMAIN="       "$f" 2>/dev/null && sed -i "s|^DOMAIN=.*|DOMAIN=${FINAL_HOST}|"           "$f"
+    grep -q "^APP_PROTOCOL=" "$f" 2>/dev/null && sed -i "s|^APP_PROTOCOL=.*|APP_PROTOCOL=${FINAL_SCHEME}|" "$f"
+
+    # ── Public URL keys ──────────────────────────────────────────────────────
+    # WEB_URL — keep as literal value (not reference) so containers see it
+    grep -q "^WEB_URL=" "$f" 2>/dev/null && sed -i "s|^WEB_URL=.*|WEB_URL=${FINAL_ORIGIN}|" "$f"
+
+    # ── CORS / CSRF ──────────────────────────────────────────────────────────
+    if grep -q "^CORS_ALLOWED_ORIGINS=" "$f" 2>/dev/null; then
+        local cors_val="${FINAL_ORIGIN}"
+        # If HTTPS domain, also allow the plain http variant for local API calls
+        if [ "$FINAL_SCHEME" = "https" ]; then
+            cors_val="${FINAL_ORIGIN},http://${FINAL_HOST}"
+        fi
+        sed -i "s|^CORS_ALLOWED_ORIGINS=.*|CORS_ALLOWED_ORIGINS=${cors_val}|" "$f"
+    fi
+    if grep -q "^CSRF_TRUSTED_ORIGINS=" "$f" 2>/dev/null; then
+        sed -i "s|^CSRF_TRUSTED_ORIGINS=.*|CSRF_TRUSTED_ORIGINS=${FINAL_ORIGIN}|" "$f"
+    fi
+
+    # ── Webhook host allowlist ────────────────────────────────────────────────
+    if grep -q "^WEBHOOK_ALLOWED_HOSTS=" "$f" 2>/dev/null; then
+        sed -i "s|^WEBHOOK_ALLOWED_HOSTS=.*|WEBHOOK_ALLOWED_HOSTS=${FINAL_ORIGIN}|" "$f"
+    fi
+
+    # ── Silo / integration callback ───────────────────────────────────────────
+    if grep -q "^INTEGRATION_CALLBACK_BASE_URL=" "$f" 2>/dev/null; then
+        local cur_icb
+        cur_icb=$(grep "^INTEGRATION_CALLBACK_BASE_URL=" "$f" | cut -d= -f2- | tr -d '"' | tr -d "'")
+        # Only set when currently empty; don't overwrite a deliberately configured value
+        if [ -z "$cur_icb" ]; then
+            sed -i "s|^INTEGRATION_CALLBACK_BASE_URL=.*|INTEGRATION_CALLBACK_BASE_URL=${FINAL_ORIGIN}|" "$f"
+        fi
+    fi
+
+    # ── SMTP domain (hostname part only, not the full origin) ─────────────────
+    if grep -q "^SMTP_DOMAIN=" "$f" 2>/dev/null; then
+        local cur_smtp
+        cur_smtp=$(grep "^SMTP_DOMAIN=" "$f" | cut -d= -f2- | tr -d '"' | tr -d "'")
+        # Only update if still set to the default placeholder
+        if [ "$cur_smtp" = "0.0.0.0" ] || [ "$cur_smtp" = "example.com" ] || [ -z "$cur_smtp" ]; then
+            sed -i "s|^SMTP_DOMAIN=.*|SMTP_DOMAIN=${FINAL_HOST}|" "$f"
+        fi
+    fi
+
+    # ── PI OAuth redirect URI ─────────────────────────────────────────────────
+    if grep -q "^PLANE_OAUTH_REDIRECT_URI=" "$f" 2>/dev/null; then
+        local cur_pi
+        cur_pi=$(grep "^PLANE_OAUTH_REDIRECT_URI=" "$f" | cut -d= -f2- | tr -d '"' | tr -d "'")
+        if [ -z "$cur_pi" ]; then
+            sed -i "s|^PLANE_OAUTH_REDIRECT_URI=.*|PLANE_OAUTH_REDIRECT_URI=${FINAL_ORIGIN}/pi/api/v1/oauth/callback/|" "$f"
+        fi
+    fi
+
+    # ── Keycloak / OIDC redirect URIs ────────────────────────────────────────
+    if grep -q "^KEYCLOAK_REDIRECT_URI=" "$f" 2>/dev/null; then
+        sed -i "s|^KEYCLOAK_REDIRECT_URI=.*|KEYCLOAK_REDIRECT_URI=${FINAL_ORIGIN}/auth/oidc/callback/|" "$f"
+    fi
+    if grep -q "^KEYCLOAK_POST_LOGOUT_REDIRECT_URI=" "$f" 2>/dev/null; then
+        sed -i "s|^KEYCLOAK_POST_LOGOUT_REDIRECT_URI=.*|KEYCLOAK_POST_LOGOUT_REDIRECT_URI=${FINAL_ORIGIN}/|" "$f"
+    fi
+
+    # ── Proxy SITE_ADDRESS (port directive for Caddy) ─────────────────────────
+    if grep -q "^SITE_ADDRESS=" "$f" 2>/dev/null; then
+        if [ "$FINAL_SCHEME" = "https" ]; then
+            sed -i "s|^SITE_ADDRESS=.*|SITE_ADDRESS=${FINAL_HOST}|" "$f"
         else
-            echo "ONEFLOW_DOMAIN=${FINAL_ORIGIN}" >> "$env_file"
-        fi
-
-        if grep -q "^DOMAIN_NAME=" "$env_file"; then
-            sed -i "s|^DOMAIN_NAME=.*|DOMAIN_NAME=${FINAL_HOST}|" "$env_file"
-        else
-            echo "DOMAIN_NAME=${FINAL_HOST}" >> "$env_file"
-        fi
-
-        if grep -q "^WEB_URL=" "$env_file"; then
-            sed -i "s|^WEB_URL=.*|WEB_URL=\${ONEFLOW_DOMAIN}|" "$env_file"
-        fi
-
-        if grep -q "^APP_PROTOCOL=" "$env_file"; then
-            sed -i "s|^APP_PROTOCOL=.*|APP_PROTOCOL=${FINAL_SCHEME}|" "$env_file"
+            sed -i "s|^SITE_ADDRESS=.*|SITE_ADDRESS=:80|" "$f"
         fi
     fi
 }
 
-update_env_domain "${DEPLOY_DIR}/plane.env"
-update_env_domain "$(dirname "${DEPLOY_DIR}")/plane.env"
-update_env_domain "${SOURCE_DIR}/.env"
-update_env_domain "${DEPLOY_DIR}/.env"
+# ---------------------------------------------------------------------------
+# sync_all_domain_vars — applies sync_domain_in_file to EVERY env file
+# ---------------------------------------------------------------------------
+sync_all_domain_vars() {
+    local synced=0
+
+    # Primary deploy-level env files (outside containers)
+    for env_f in \
+        "${DEPLOY_DIR}/plane.env" \
+        "${DEPLOY_DIR}/.env" \
+        "$(dirname "${DEPLOY_DIR}")/plane.env" \
+        "$(dirname "${DEPLOY_DIR}")/.env" \
+        "${SOURCE_DIR}/.env"
+    do
+        if [ -f "$env_f" ]; then
+            sync_domain_in_file "$env_f"
+            synced=$((synced + 1))
+        fi
+    done
+
+    # .config.env (used by the plane CLI / installer bookkeeping)
+    if [ -f "${DEPLOY_DIR}/.config.env" ]; then
+        sync_domain_in_file "${DEPLOY_DIR}/.config.env"
+        synced=$((synced + 1))
+    fi
+
+    # App-level env files (source tree — these get bind-mounted or baked into images)
+    local app_env
+    for app_env in \
+        "${SOURCE_DIR}/apps/api/.env" \
+        "${SOURCE_DIR}/apps/web/.env" \
+        "${SOURCE_DIR}/apps/space/.env" \
+        "${SOURCE_DIR}/apps/admin/.env" \
+        "${SOURCE_DIR}/apps/live/.env"
+    do
+        if [ -f "$app_env" ]; then
+            sync_domain_in_file "$app_env"
+            synced=$((synced + 1))
+        fi
+    done
+
+    # Deployment template variables files
+    for tpl_env in \
+        "${SOURCE_DIR}/deployments/cli/community/variables.env" \
+        "${SOURCE_DIR}/deployments/aio/community/variables.env"
+    do
+        if [ -f "$tpl_env" ]; then
+            sync_domain_in_file "$tpl_env"
+            synced=$((synced + 1))
+        fi
+    done
+
+    echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  Domain propagated to ${CLR_BOLD}${synced}${CLR_RESET} environment files"
+}
+
+# Run the comprehensive sync immediately after domain is determined
+sync_all_domain_vars
 
 echo ""
 echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  ${CLR_BOLD}Deployment domain configured:${CLR_RESET} ${CLR_PRIMARY}${FINAL_ORIGIN}${CLR_RESET} ${CLR_MUTED}(host: ${FINAL_HOST}, scheme: ${FINAL_SCHEME})${CLR_RESET}"
