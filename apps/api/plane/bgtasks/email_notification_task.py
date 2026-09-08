@@ -192,12 +192,23 @@ def send_email_notification(issue_id, notification_data, receiver_id, email_noti
                 comment = changes.pop("comment", False)
                 mention = changes.pop("mention", False)
                 actors_involved.append(actor_id)
+                def get_actor_avatar_url(actor_obj, base_url):
+                    if not actor_obj.avatar_url:
+                        return None
+                    if actor_obj.avatar_url.startswith("http://") or actor_obj.avatar_url.startswith("https://"):
+                        return actor_obj.avatar_url
+                    if base_url:
+                        return f"{base_url.rstrip('/')}/{actor_obj.avatar_url.lstrip('/')}"
+                    return actor_obj.avatar_url
+
+                actor_avatar = get_actor_avatar_url(actor, base_api)
+
                 if comment:
                     comments.append(
                         {
                             "actor_comments": comment,
                             "actor_detail": {
-                                "avatar_url": f"{base_api}{actor.avatar_url}",
+                                "avatar_url": actor_avatar,
                                 "first_name": actor.first_name,
                                 "last_name": actor.last_name,
                             },
@@ -210,7 +221,7 @@ def send_email_notification(issue_id, notification_data, receiver_id, email_noti
                         {
                             "actor_comments": mention,
                             "actor_detail": {
-                                "avatar_url": f"{base_api}{actor.avatar_url}",
+                                "avatar_url": actor_avatar,
                                 "first_name": actor.first_name,
                                 "last_name": actor.last_name,
                             },
@@ -224,7 +235,7 @@ def send_email_notification(issue_id, notification_data, receiver_id, email_noti
                     template_data.append(
                         {
                             "actor_detail": {
-                                "avatar_url": f"{base_api}{actor.avatar_url}",
+                                "avatar_url": actor_avatar,
                                 "first_name": actor.first_name,
                                 "last_name": actor.last_name,
                             },

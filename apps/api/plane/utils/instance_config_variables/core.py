@@ -250,6 +250,63 @@ unsplash_config_variables = [
     },
 ]
 
+oidc_config_variables = [
+    {
+        "key": "IS_OIDC_ENABLED",
+        "value": os.environ.get("IS_OIDC_ENABLED", "0"),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
+    {
+        "key": "OIDC_PROVIDER_NAME",
+        "value": os.environ.get("OIDC_PROVIDER_NAME", "Keycloak"),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
+    {
+        "key": "OIDC_CLIENT_ID",
+        "value": os.environ.get("OIDC_CLIENT_ID", os.environ.get("KEYCLOAK_CLIENT_ID", "")),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
+    {
+        "key": "OIDC_CLIENT_SECRET",
+        "value": os.environ.get("OIDC_CLIENT_SECRET", os.environ.get("KEYCLOAK_CLIENT_SECRET", "")),
+        "category": "AUTHENTICATION",
+        "is_encrypted": True,
+    },
+    {
+        "key": "OIDC_AUTHORIZE_URL",
+        "value": os.environ.get("OIDC_AUTHORIZE_URL", ""),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
+    {
+        "key": "OIDC_TOKEN_URL",
+        "value": os.environ.get("OIDC_TOKEN_URL", ""),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
+    {
+        "key": "OIDC_USERINFO_URL",
+        "value": os.environ.get("OIDC_USERINFO_URL", ""),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
+    {
+        "key": "OIDC_LOGOUT_URL",
+        "value": os.environ.get("OIDC_LOGOUT_URL", ""),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
+    {
+        "key": "ENABLE_OIDC_IDP_SYNC",
+        "value": os.environ.get("ENABLE_OIDC_IDP_SYNC", "0"),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
+]
+
 core_config_variables = [
     *authentication_config_variables,
     *workspace_management_config_variables,
@@ -257,7 +314,9 @@ core_config_variables = [
     *github_config_variables,
     *gitlab_config_variables,
     *gitea_config_variables,
+    *oidc_config_variables,
     *smtp_config_variables,
     *llm_config_variables,
     *unsplash_config_variables,
 ]
+
