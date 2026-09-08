@@ -893,16 +893,17 @@ def main():
         elif arg.startswith("--domain="):
             cli_domain = arg.split("=", 1)[1]
 
-    if not cli_domain and not os.environ.get("ONEFLOW_DOMAIN_CONFIGURED") and sys.stdin.isatty():
-        default_candidate = detect_server_ip(deploy_dir, script_dir)
-        if not default_candidate.startswith("http://") and not default_candidate.startswith("https://"):
-            if default_candidate in ["localhost", "127.0.0.1"] or re.match(r'^\d+\.\d+\.\d+\.\d+', default_candidate):
-                default_domain = f"http://{default_candidate}"
-            else:
-                default_domain = f"https://{default_candidate}"
+    no_prompt = "--no-prompt" in sys.argv
+    default_candidate = detect_server_ip(deploy_dir, script_dir)
+    if not default_candidate.startswith("http://") and not default_candidate.startswith("https://"):
+        if default_candidate in ["localhost", "127.0.0.1"] or re.match(r'^\d+\.\d+\.\d+\.\d+', default_candidate):
+            default_domain = f"http://{default_candidate}"
         else:
-            default_domain = default_candidate
+            default_domain = f"https://{default_candidate}"
+    else:
+        default_domain = default_candidate
 
+    if not cli_domain and not no_prompt and not os.environ.get("ONEFLOW_DOMAIN_CONFIGURED") and sys.stdin.isatty():
         print(f"\n {CLR_PRIMARY}{CLR_BOLD}╭─[ DEPLOYMENT DOMAIN CONFIGURATION ]────────────────────────╮{CLR_RESET}")
         print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_BOLD}Enter the public domain or IP address for OneFlow.{CLR_RESET}        {CLR_PRIMARY}│{CLR_RESET}")
         print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_MUTED}Examples: https://oneflow.cubeone.in or http://13.234.29.32{CLR_RESET} {CLR_PRIMARY}│{CLR_RESET}")
@@ -913,6 +914,8 @@ def main():
         except (EOFError, KeyboardInterrupt):
             print("")
             sys.exit(1)
+    elif not cli_domain:
+        cli_domain = default_domain
 
     if cli_domain:
         cli_domain = cli_domain.strip().rstrip("/")

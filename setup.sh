@@ -227,8 +227,13 @@ detect_host_ip() {
 
 # Parse Command-Line Arguments
 CLI_DOMAIN=""
-USE_TUI=false
+USE_TUI=true
 NO_PROMPT=false
+
+# Auto-detect TTY support for TUI
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+    USE_TUI=false
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -259,8 +264,8 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  -d, --domain <URL|IP>   Specify deployment domain or IP without prompting"
-            echo "      --tui               Launch dual-pane interactive Python TUI"
-            echo "      --no-tui            Run in standard terminal mode (default)"
+            echo "      --tui               Launch dual-pane interactive Python TUI (default in interactive terminal)"
+            echo "      --no-tui            Run in standard linear terminal mode"
             echo "      --no-prompt         Use existing/detected domain without interactive prompt"
             echo "  -h, --help              Show this help message"
             echo ""
@@ -271,6 +276,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Delegate immediately to interactive Python dual-pane TUI if enabled
+if [ "$USE_TUI" = true ] && command -v python3 >/dev/null 2>&1 && [ -f "${SOURCE_DIR}/setup.py" ]; then
+    exec python3 "${SOURCE_DIR}/setup.py" "$@"
+fi
 
 # Clear terminal screen if running interactively
 if [ -t 1 ]; then
