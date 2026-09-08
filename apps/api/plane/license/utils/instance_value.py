@@ -24,10 +24,15 @@ def get_configuration_value(keys):
             for item in instance_configuration:
                 if key.get("key") == item.get("key"):
                     if item.get("is_encrypted", False):
-                        environment_list.append(decrypt_data(item.get("value")))
+                        val = decrypt_data(item.get("value"))
                     else:
-                        environment_list.append(item.get("value"))
+                        val = item.get("value")
 
+                    # If database record is empty or whitespace, fall back to environment default if provided
+                    if (val is None or (isinstance(val, str) and not val.strip())) and key.get("default") is not None:
+                        val = key.get("default")
+
+                    environment_list.append(val)
                     break
             else:
                 environment_list.append(key.get("default"))
@@ -40,7 +45,7 @@ def get_configuration_value(keys):
 
 
 def get_email_configuration():
-    return get_configuration_value(
+    host, user, password, port, use_tls, use_ssl, email_from = get_configuration_value(
         [
             {"key": "EMAIL_HOST", "default": os.environ.get("EMAIL_HOST")},
             {"key": "EMAIL_HOST_USER", "default": os.environ.get("EMAIL_HOST_USER")},
@@ -57,3 +62,10 @@ def get_email_configuration():
             },
         ]
     )
+
+    try:
+        port = str(int(port)) if port else "587"
+    except (ValueError, TypeError):
+        port = "587"
+
+    return host, user, password, port, use_tls, use_ssl, email_from
