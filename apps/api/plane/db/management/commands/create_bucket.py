@@ -24,6 +24,12 @@ class Command(BaseCommand):
             self.stdout.write(self.style.NOTICE("S3 / MinIO storage is not configured. Skipping bucket setup."))
             return
 
+        # When using native AWS S3 (no custom endpoint), buckets are pre-created externally.
+        # Only attempt bucket creation when a custom endpoint (e.g. MinIO) is provided.
+        if use_minio != "1" and not endpoint_url:
+            self.stdout.write(self.style.NOTICE("Using native AWS S3 — bucket is pre-created. Skipping bucket setup."))
+            return
+
         if not bucket_name:
             self.stdout.write(self.style.NOTICE("AWS_S3_BUCKET_NAME is not set. Skipping bucket setup."))
             return

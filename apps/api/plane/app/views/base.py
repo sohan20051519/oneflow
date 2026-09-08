@@ -76,7 +76,8 @@ class BaseViewSet(TimezoneMixin, ReadReplicaControlMixin, ModelViewSet, BasePagi
             response = super().handle_exception(exc)
             return response
         except Exception as e:
-            (print(e, traceback.format_exc()) if settings.DEBUG else print("Server Error"))
+            log_exception(e)
+            (print(e, traceback.format_exc()) if settings.DEBUG else None)
             if isinstance(e, IntegrityError):
                 return Response(
                     {"error": "The payload is not valid"},
@@ -173,6 +174,8 @@ class BaseAPIView(TimezoneMixin, ReadReplicaControlMixin, APIView, BasePaginator
             response = super().handle_exception(exc)
             return response
         except Exception as e:
+            log_exception(e)
+            (print(e, traceback.format_exc()) if settings.DEBUG else None)
             if isinstance(e, IntegrityError):
                 return Response(
                     {"error": "The payload is not valid"},

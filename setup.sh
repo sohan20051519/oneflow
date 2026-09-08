@@ -19,6 +19,7 @@ if [ "$COLORTERM" = "truecolor" ] || [ "$COLORTERM" = "24bit" ] || [ -n "$WT_SES
     CLR_SUCCESS="\033[38;2;34;163;75m"     # Success Green #22A34B
     CLR_WARNING="\033[38;2;250;204;21m"    # Warning Amber #FACC15
     CLR_DANGER="\033[38;2;239;68;68m"      # Danger Red #EF4444
+    CLR_CYAN="\033[38;2;56;189;248m"       # Info Accent #38BDF8
     CLR_ACCENT="\033[38;2;36;36;36m"       # Card surface
 else
     CLR_PRIMARY="\033[38;5;197m"
@@ -29,6 +30,7 @@ else
     CLR_SUCCESS="\033[38;5;35m"
     CLR_WARNING="\033[38;5;220m"
     CLR_DANGER="\033[38;5;203m"
+    CLR_CYAN="\033[38;5;81m"
     CLR_ACCENT="\033[38;5;236m"
 fi
 
@@ -39,24 +41,40 @@ CLR_RESET="\033[0m"
 # Track overall status
 SETUP_SUCCESS=true
 
+# Global failure tracking arrays for exact error diagnostics
+declare -a FAIL_STEPS=()
+declare -a FAIL_COMMANDS=()
+declare -a FAIL_EXITCODES=()
+declare -a FAIL_DETAILS=()
+
+record_failure() {
+    local step_title="$1"
+    local command_str="$2"
+    local exit_code="$3"
+    local detail_text="$4"
+    FAIL_STEPS+=("$step_title")
+    FAIL_COMMANDS+=("$command_str")
+    FAIL_EXITCODES+=("$exit_code")
+    FAIL_DETAILS+=("$detail_text")
+    SETUP_SUCCESS=false
+}
+
+print_exact_error() {
+    local title="$1"
+    local details="$2"
+    echo ""
+    echo -e " ${CLR_DANGER}${CLR_BOLD}┌──[ EXACT ERROR: ${title} ]─────────────────────────────────${CLR_RESET}"
+    if [ -n "$details" ]; then
+        while IFS= read -r err_line; do
+            echo -e " ${CLR_DANGER}│${CLR_RESET}  ${err_line}"
+        done <<< "$details"
+    fi
+    echo -e " ${CLR_DANGER}└──$(printf '─%.0s' $(seq 1 60))${CLR_RESET}"
+    echo ""
+}
+
 # Determine directory paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Pre-authenticate sudo cleanly in standard terminal mode before launching TUI
-if ! docker info >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
-    if ! sudo -n docker info >/dev/null 2>&1; then
-        echo ""
-        echo -e " ${CLR_PRIMARY}${CLR_BOLD}●${CLR_RESET} ${CLR_BOLD}Sudo privileges required for Docker container management.${CLR_RESET}"
-        echo -e "   Please enter your sudo password if prompted below:"
-        sudo -v || exit 1
-        echo ""
-    fi
-fi
-
-# Launch interactive Dual-Pane TUI with Live Logs & Progress Bar if python3 is available
-if [ "$1" != "--no-tui" ] && command -v python3 >/dev/null 2>&1 && [ -f "${SCRIPT_DIR}/setup.py" ]; then
-    exec python3 "${SCRIPT_DIR}/setup.py" "$@"
-fi
 
 if [ -f "${SCRIPT_DIR}/docker-compose.yml" ]; then
     DEPLOY_DIR="${SCRIPT_DIR}"
@@ -72,6 +90,11 @@ else
     COMPOSE_FILE="${SOURCE_DIR}/docker-compose.yml"
 fi
 
+# If plane.env is not in DEPLOY_DIR but is in parent directory, resolve DEPLOY_DIR to parent
+if [ ! -f "${DEPLOY_DIR}/plane.env" ] && [ -f "$(dirname "${DEPLOY_DIR}")/plane.env" ]; then
+    DEPLOY_DIR="$(dirname "${DEPLOY_DIR}")"
+fi
+
 # Detect Docker command (supports rootless and sudo)
 if docker info >/dev/null 2>&1; then
     DOCKER_CMD="docker"
@@ -81,6 +104,17 @@ elif command -v sudo >/dev/null 2>&1; then
     DOCKER_CMD="sudo docker"
 else
     DOCKER_CMD="docker"
+fi
+
+# Pre-authenticate sudo cleanly in standard terminal mode
+if ! docker info >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    if ! sudo -n docker info >/dev/null 2>&1; then
+        echo ""
+        echo -e " ${CLR_PRIMARY}${CLR_BOLD}●${CLR_RESET} ${CLR_BOLD}Sudo privileges required for Docker container management.${CLR_RESET}"
+        echo -e "   Please enter your sudo password if prompted below:"
+        sudo -v || exit 1
+        echo ""
+    fi
 fi
 
 # Helper: Print formatted section header
@@ -139,6 +173,105 @@ print_item() {
     esac
 }
 
+# Dynamically detect host access IP or Domain
+detect_host_ip() {
+    # 0. User override via environment variable
+    if [ -n "$ONEFLOW_DOMAIN" ] && [ "$ONEFLOW_DOMAIN" != "localhost" ] && [ "$ONEFLOW_DOMAIN" != "127.0.0.1" ]; then
+        echo "$ONEFLOW_DOMAIN"
+        return
+    fi
+    if [ -n "$APP_DOMAIN" ] && [ "$APP_DOMAIN" != "localhost" ] && [ "$APP_DOMAIN" != "127.0.0.1" ]; then
+        echo "$APP_DOMAIN"
+        return
+    fi
+
+    # 1. Configured domain in plane.env or .env
+    local env_ip=""
+    if [ -f "${DEPLOY_DIR}/plane.env" ]; then
+        env_ip=$(grep -E "^(ONEFLOW_DOMAIN|DOMAIN_NAME)=" "${DEPLOY_DIR}/plane.env" 2>/dev/null | cut -d '=' -f2- | tr -d '"' | tr -d "'" | head -n 1 || true)
+    fi
+    if [ -z "$env_ip" ] && [ -f "${SOURCE_DIR}/.env" ]; then
+        env_ip=$(grep -E "^(ONEFLOW_DOMAIN|DOMAIN_NAME)=" "${SOURCE_DIR}/.env" 2>/dev/null | cut -d '=' -f2- | tr -d '"' | tr -d "'" | head -n 1 || true)
+    fi
+    if [ -z "$env_ip" ] && [ -f "${DEPLOY_DIR}/.env" ]; then
+        env_ip=$(grep -E "^(ONEFLOW_DOMAIN|DOMAIN_NAME)=" "${DEPLOY_DIR}/.env" 2>/dev/null | cut -d '=' -f2- | tr -d '"' | tr -d "'" | head -n 1 || true)
+    fi
+    if [ -n "$env_ip" ] && [ "$env_ip" != "localhost" ] && [ "$env_ip" != "127.0.0.1" ] && [ "$env_ip" != "0.0.0.0" ]; then
+        echo "$env_ip"
+        return
+    fi
+
+    # 2. Public IP discovery services (fast 2s timeout)
+    local pub_ip=""
+    for srv in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com" "https://checkip.amazonaws.com"; do
+        pub_ip=$(curl -s --max-time 2 "$srv" 2>/dev/null || true)
+        if echo "$pub_ip" | grep -Eq '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
+            echo "$pub_ip"
+            return
+        fi
+    done
+
+    # 3. Default route / local network interface (excluding docker bridges 172.17/18)
+    local lan_ip=""
+    lan_ip=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[0-9.]+' || true)
+    if [ -z "$lan_ip" ]; then
+        lan_ip=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i !~ /^127\./ && $i !~ /^172\.(17|18)\./) {print $i; exit}}' || true)
+    fi
+    if [ -n "$lan_ip" ] && [ "$lan_ip" != "127.0.0.1" ]; then
+        echo "$lan_ip"
+        return
+    fi
+
+    echo "localhost"
+}
+
+# Parse Command-Line Arguments
+CLI_DOMAIN=""
+USE_TUI=false
+NO_PROMPT=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --domain|-d)
+            CLI_DOMAIN="$2"
+            shift 2
+            ;;
+        --domain=*)
+            CLI_DOMAIN="${1#*=}"
+            shift
+            ;;
+        --tui)
+            USE_TUI=true
+            shift
+            ;;
+        --no-tui)
+            USE_TUI=false
+            shift
+            ;;
+        --no-prompt)
+            NO_PROMPT=true
+            shift
+            ;;
+        -h|--help)
+            echo "one flow · Deployment Setup Script"
+            echo ""
+            echo "Usage: ./setup.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  -d, --domain <URL|IP>   Specify deployment domain or IP without prompting"
+            echo "      --tui               Launch dual-pane interactive Python TUI"
+            echo "      --no-tui            Run in standard terminal mode (default)"
+            echo "      --no-prompt         Use existing/detected domain without interactive prompt"
+            echo "  -h, --help              Show this help message"
+            echo ""
+            exit 0
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
 # Clear terminal screen if running interactively
 if [ -t 1 ]; then
     clear
@@ -161,6 +294,112 @@ box_row $BANNER_W "  ${CLR_TEXT}${CLR_BOLD}one flow${CLR_RESET} ${CLR_MUTED}· i
 echo -e " ${CLR_PRIMARY}╰$(printf "─%.0s" $(seq 1 $((BANNER_W + 2))))╯${CLR_RESET}"
 
 # ==============================================================================
+# Step 0: Domain Configuration (Interactive prompt before setup begins)
+# ==============================================================================
+
+# Determine default domain candidate
+DETECTED_RAW=$(detect_host_ip)
+DETECTED_RAW="${DETECTED_RAW%/}"
+
+if [[ "$DETECTED_RAW" =~ ^https?:// ]]; then
+    DEFAULT_DOMAIN="$DETECTED_RAW"
+elif [[ "$DETECTED_RAW" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(:[0-9]+)?$ ]] || [ "$DETECTED_RAW" = "localhost" ] || [[ "$DETECTED_RAW" =~ ^localhost:[0-9]+$ ]]; then
+    DEFAULT_DOMAIN="http://${DETECTED_RAW}"
+elif [ -n "$DETECTED_RAW" ]; then
+    DEFAULT_DOMAIN="https://${DETECTED_RAW}"
+else
+    DEFAULT_DOMAIN="http://localhost"
+fi
+
+CHOSEN_INPUT=""
+
+if [ -n "$CLI_DOMAIN" ]; then
+    CHOSEN_INPUT="$CLI_DOMAIN"
+elif [ "$NO_PROMPT" = true ] || [ ! -t 0 ]; then
+    CHOSEN_INPUT="$DEFAULT_DOMAIN"
+else
+    echo ""
+    echo -e " ${CLR_PRIMARY}${CLR_BOLD}╭─[ DEPLOYMENT DOMAIN CONFIGURATION ]────────────────────────╮${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}  ${CLR_BOLD}Enter the public domain or IP address for OneFlow.${CLR_RESET}        ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}  ${CLR_MUTED}Examples:${CLR_RESET}                                                 ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}https://oneflow.cubeone.in${CLR_RESET}  (Production with SSL)       ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}http://13.234.29.32${CLR_RESET}         (Staging / Public IP)       ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}http://localhost${CLR_RESET}            (Local Development)         ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯${CLR_RESET}"
+    echo ""
+    read -r -p " Enter Domain [default: ${DEFAULT_DOMAIN}]: " USER_DOMAIN_INPUT
+    CHOSEN_INPUT="${USER_DOMAIN_INPUT}"
+fi
+
+# Normalize domain input
+CHOSEN_INPUT=$(echo "$CHOSEN_INPUT" | xargs)
+CHOSEN_INPUT="${CHOSEN_INPUT%/}"
+
+if [ -z "$CHOSEN_INPUT" ]; then
+    CHOSEN_INPUT="${DEFAULT_DOMAIN}"
+fi
+
+if [[ "$CHOSEN_INPUT" =~ ^https?:// ]]; then
+    FINAL_ORIGIN="$CHOSEN_INPUT"
+elif [[ "$CHOSEN_INPUT" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(:[0-9]+)?$ ]] || [ "$CHOSEN_INPUT" = "localhost" ] || [[ "$CHOSEN_INPUT" =~ ^localhost:[0-9]+$ ]]; then
+    FINAL_ORIGIN="http://${CHOSEN_INPUT}"
+else
+    FINAL_ORIGIN="https://${CHOSEN_INPUT}"
+fi
+
+FINAL_HOST=$(echo "$FINAL_ORIGIN" | sed -E 's|^https?://||; s|/.*||; s|:[0-9]+$||')
+FINAL_SCHEME=$(echo "$FINAL_ORIGIN" | grep -oE '^https?')
+
+# Export canonical environment variables immediately
+export ONEFLOW_DOMAIN="${FINAL_ORIGIN}"
+export DOMAIN_NAME="${FINAL_HOST}"
+export APP_DOMAIN="${FINAL_HOST}"
+export WEB_URL="${FINAL_ORIGIN}"
+export APP_PROTOCOL="${FINAL_SCHEME}"
+export ONEFLOW_DOMAIN_CONFIGURED=1
+
+# Persist to plane.env if file exists
+update_env_domain() {
+    local env_file="$1"
+    if [ -f "$env_file" ]; then
+        if grep -q "^ONEFLOW_DOMAIN=" "$env_file"; then
+            sed -i "s|^ONEFLOW_DOMAIN=.*|ONEFLOW_DOMAIN=${FINAL_ORIGIN}|" "$env_file"
+        else
+            echo "ONEFLOW_DOMAIN=${FINAL_ORIGIN}" >> "$env_file"
+        fi
+
+        if grep -q "^DOMAIN_NAME=" "$env_file"; then
+            sed -i "s|^DOMAIN_NAME=.*|DOMAIN_NAME=${FINAL_HOST}|" "$env_file"
+        else
+            echo "DOMAIN_NAME=${FINAL_HOST}" >> "$env_file"
+        fi
+
+        if grep -q "^WEB_URL=" "$env_file"; then
+            sed -i "s|^WEB_URL=.*|WEB_URL=\${ONEFLOW_DOMAIN}|" "$env_file"
+        fi
+
+        if grep -q "^APP_PROTOCOL=" "$env_file"; then
+            sed -i "s|^APP_PROTOCOL=.*|APP_PROTOCOL=${FINAL_SCHEME}|" "$env_file"
+        fi
+    fi
+}
+
+update_env_domain "${DEPLOY_DIR}/plane.env"
+update_env_domain "$(dirname "${DEPLOY_DIR}")/plane.env"
+update_env_domain "${SOURCE_DIR}/.env"
+update_env_domain "${DEPLOY_DIR}/.env"
+
+echo ""
+echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  ${CLR_BOLD}Deployment domain configured:${CLR_RESET} ${CLR_PRIMARY}${FINAL_ORIGIN}${CLR_RESET} ${CLR_MUTED}(host: ${FINAL_HOST}, scheme: ${FINAL_SCHEME})${CLR_RESET}"
+echo -e " ${CLR_MUTED}Starting automated deployment setup...${CLR_RESET}"
+echo ""
+
+# Delegate to interactive Python TUI only if explicitly requested
+if [ "$USE_TUI" = true ] && command -v python3 >/dev/null 2>&1 && [ -f "${SOURCE_DIR}/setup.py" ]; then
+    exec python3 "${SOURCE_DIR}/setup.py" --domain "${FINAL_ORIGIN}" "$@"
+fi
+
+# ==============================================================================
 # Step 1: Environment File Configuration
 # ==============================================================================
 print_step "STEP 1/5" "Provisioning Environment Configurations"
@@ -172,6 +411,7 @@ copy_env() {
 
     if [ ! -f "$src" ]; then
         print_item "fail" "Missing source template: ${src}"
+        record_failure "STEP 1: Provisioning Environment Configurations" "copy_env $src $dest" 1 "Missing source template file: ${src}"
         SETUP_SUCCESS=false
         return 1
     fi
@@ -179,8 +419,15 @@ copy_env() {
     if [ -f "$dest" ]; then
         print_item "info" "Existing file preserved: ${label}"
     else
-        cp "$src" "$dest"
-        print_item "ok" "Generated ${label} from template"
+        local copy_err
+        copy_err=$(cp "$src" "$dest" 2>&1)
+        if [ $? -eq 0 ]; then
+            print_item "ok" "Generated ${label} from template"
+        else
+            print_item "fail" "Failed to create ${label}: ${copy_err}"
+            record_failure "STEP 1: Provisioning Environment Configurations" "cp $src $dest" 1 "$copy_err"
+            SETUP_SUCCESS=false
+        fi
     fi
 }
 
@@ -287,24 +534,35 @@ print_step_done
 # ==============================================================================
 print_step "STEP 3/5" "Container Runtime & Image Synchronization"
 
-if ! ${DOCKER_CMD} info >/dev/null 2>&1; then
-    print_item "fail" "Docker daemon is not accessible. Please ensure Docker is running."
+DOCKER_TEST_LOG=$(mktemp)
+if ! ${DOCKER_CMD} info >"$DOCKER_TEST_LOG" 2>&1; then
+    DOCKER_ERR_MSG=$(cat "$DOCKER_TEST_LOG")
+    print_item "fail" "Docker daemon is not accessible"
+    print_exact_error "Docker Engine Accessibility Failure" "$DOCKER_ERR_MSG"
+    record_failure "STEP 3: Container Runtime" "${DOCKER_CMD} info" 1 "$DOCKER_ERR_MSG"
     SETUP_SUCCESS=false
 else
     DOCKER_VER=$(${DOCKER_CMD} --version 2>/dev/null | awk '{print $3}' | tr -d ',' || echo "detected")
     print_item "ok" "Docker engine operational (version ${DOCKER_VER})"
 fi
+rm -f "$DOCKER_TEST_LOG"
 
 # Check frontend oneflow image
 if ${DOCKER_CMD} image inspect plane-frontend:oneflow >/dev/null 2>&1; then
     print_item "ok" "Found customized oneflow frontend image (plane-frontend:oneflow)"
 else
     print_item "info" "Building customized oneflow frontend image..."
-    if ${DOCKER_CMD} build -f "${SOURCE_DIR}/apps/web/Dockerfile.web" -t plane-frontend:oneflow "${SOURCE_DIR}" >/dev/null 2>&1; then
+    BUILD_LOG=$(mktemp)
+    if ${DOCKER_CMD} build -f "${SOURCE_DIR}/apps/web/Dockerfile.web" -t plane-frontend:oneflow "${SOURCE_DIR}" >"$BUILD_LOG" 2>&1; then
         print_item "ok" "Built plane-frontend:oneflow image successfully"
     else
+        BUILD_EXIT=$?
+        BUILD_ERR_SNIP=$(tail -n 35 "$BUILD_LOG")
         print_item "warn" "Building web image failed; continuing with fallback images"
+        print_exact_error "Custom Frontend Build Failed (exit code ${BUILD_EXIT})" "$BUILD_ERR_SNIP"
+        record_failure "STEP 3: Custom Frontend Image Build" "${DOCKER_CMD} build -f ${SOURCE_DIR}/apps/web/Dockerfile.web -t plane-frontend:oneflow ${SOURCE_DIR}" "$BUILD_EXIT" "$BUILD_ERR_SNIP"
     fi
+    rm -f "$BUILD_LOG"
 fi
 
 print_step_done
@@ -319,18 +577,31 @@ COMPOSE_ENV="${DEPLOY_DIR}/plane.env"
 if [ -f "$COMPOSE_FILE" ]; then
     print_item "ok" "Detected docker-compose configuration (${COMPOSE_FILE##*/})"
     print_item "info" "Starting containers with Docker Compose..."
-    if [ -f "$COMPOSE_ENV" ]; then
-        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" --env-file "$COMPOSE_ENV" up -d --build >/dev/null 2>&1
-    elif [ -f "${SOURCE_DIR}/.env" ]; then
-        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" --env-file "${SOURCE_DIR}/.env" up -d --build >/dev/null 2>&1
-    else
-        ${DOCKER_CMD} compose --file "$COMPOSE_FILE" up -d --build >/dev/null 2>&1
-    fi
 
-    RUNNING_COUNT=$(${DOCKER_CMD} ps --format "{{.Names}}" | wc -l)
-    print_item "ok" "Orchestrated ${RUNNING_COUNT} containerized services in background"
+    COMPOSE_ARGS=("--file" "$COMPOSE_FILE")
+    if [ -f "$COMPOSE_ENV" ]; then
+        COMPOSE_ARGS+=("--env-file" "$COMPOSE_ENV")
+    elif [ -f "${SOURCE_DIR}/.env" ]; then
+        COMPOSE_ARGS+=("--env-file" "${SOURCE_DIR}/.env")
+    fi
+    COMPOSE_ARGS+=("up" "-d" "--build")
+
+    COMPOSE_LOG=$(mktemp)
+    if ${DOCKER_CMD} compose "${COMPOSE_ARGS[@]}" >"$COMPOSE_LOG" 2>&1; then
+        RUNNING_COUNT=$(${DOCKER_CMD} ps --format "{{.Names}}" | wc -l)
+        print_item "ok" "Orchestrated ${RUNNING_COUNT} containerized services in background"
+    else
+        COMPOSE_EXIT=$?
+        COMPOSE_ERR=$(cat "$COMPOSE_LOG")
+        print_item "fail" "Docker Compose failed to start services (exit code ${COMPOSE_EXIT})"
+        print_exact_error "Docker Compose Command Failed" "$COMPOSE_ERR"
+        record_failure "STEP 4: Service Orchestration" "${DOCKER_CMD} compose ${COMPOSE_ARGS[*]}" "$COMPOSE_EXIT" "$COMPOSE_ERR"
+        SETUP_SUCCESS=false
+    fi
+    rm -f "$COMPOSE_LOG"
 else
     print_item "fail" "No docker-compose.yml found"
+    record_failure "STEP 4: Service Orchestration" "check $COMPOSE_FILE" 1 "Compose file not found at: ${COMPOSE_FILE}"
     SETUP_SUCCESS=false
 fi
 
@@ -354,30 +625,35 @@ for i in $(seq 1 $MIGRATOR_RETRIES); do
             MIGRATOR_OK=true
             print_item "ok" "Database migrations completed successfully"
         else
+            MIGRATOR_LOGS=$(${DOCKER_CMD} logs --tail 40 plane-migrator 2>&1 || echo "Could not retrieve migrator logs")
             print_item "fail" "Database migrations FAILED (exit code ${MIGRATOR_EXIT})"
-            print_item "info" "Check logs: ${DOCKER_CMD} logs plane-migrator"
+            print_exact_error "Database Migrations Failed in plane-migrator (exit code ${MIGRATOR_EXIT})" "$MIGRATOR_LOGS"
+            record_failure "STEP 5: Database Migrations" "${DOCKER_CMD} logs plane-migrator" "$MIGRATOR_EXIT" "$MIGRATOR_LOGS"
             SETUP_SUCCESS=false
         fi
         break
     fi
     sleep 2
 done
+
 if [ "$MIGRATOR_OK" = false ] && [ "$SETUP_SUCCESS" = true ]; then
+    MIGRATOR_LOGS=$(${DOCKER_CMD} logs --tail 30 plane-migrator 2>&1 || echo "Could not retrieve migrator logs")
     print_item "warn" "Migrator still running after $((MIGRATOR_RETRIES * 2))s; check logs"
+    print_exact_error "plane-migrator Did Not Complete Within Timeout ($((MIGRATOR_RETRIES * 2))s)" "$MIGRATOR_LOGS"
+    record_failure "STEP 5: Database Migrations Timeout" "${DOCKER_CMD} inspect plane-migrator" 124 "$MIGRATOR_LOGS"
 fi
 
 # --- Phase 2: Wait for API to be healthy (not in restart loop) ---
 APP_READY=false
+HTTP_STATUS="000"
+API_STATUS="000"
+
 if [ "$MIGRATOR_OK" = true ]; then
     RETRIES=30
     WAIT_SECONDS=3
     for i in $(seq 1 $RETRIES); do
-        # Check that api container is running (not restarting)
         API_RUNNING=$(${DOCKER_CMD} inspect --format='{{.State.Status}}' api 2>/dev/null || echo "missing")
-        API_RESTARTS=$(${DOCKER_CMD} inspect --format='{{.RestartCount}}' api 2>/dev/null || echo "0")
-
         if [ "$API_RUNNING" = "running" ]; then
-            # Check HTTP endpoints
             HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:80/" 2>/dev/null || echo "000")
             API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:80/api/instances/" 2>/dev/null || echo "000")
 
@@ -391,12 +667,14 @@ if [ "$MIGRATOR_OK" = true ]; then
 
     # --- Phase 3: Verify no critical containers are in restart loops ---
     RESTART_ISSUES=false
-    for svc in api bgworker; do
+    for svc in api bgworker web proxy plane-db plane-redis; do
         SVC_STATUS=$(${DOCKER_CMD} inspect --format='{{.State.Status}}' "$svc" 2>/dev/null || echo "missing")
         SVC_RESTARTS=$(${DOCKER_CMD} inspect --format='{{.RestartCount}}' "$svc" 2>/dev/null || echo "0")
         if [ "$SVC_STATUS" = "restarting" ] || [ "$SVC_RESTARTS" -gt 2 ] 2>/dev/null; then
-            print_item "fail" "Service '${svc}' is crash-looping (restarts: ${SVC_RESTARTS})"
-            print_item "info" "Check logs: ${DOCKER_CMD} logs ${svc}"
+            SVC_LOGS=$(${DOCKER_CMD} logs --tail 35 "$svc" 2>&1 || echo "Could not retrieve logs for $svc")
+            print_item "fail" "Service '${svc}' is crash-looping (restarts: ${SVC_RESTARTS}, status: ${SVC_STATUS})"
+            print_exact_error "Service '${svc}' Crash-Loop Diagnostics" "$SVC_LOGS"
+            record_failure "STEP 5: Container Stability (${svc})" "${DOCKER_CMD} logs ${svc}" 1 "$SVC_LOGS"
             RESTART_ISSUES=true
             SETUP_SUCCESS=false
         fi
@@ -409,8 +687,11 @@ if [ "$MIGRATOR_OK" = true ]; then
     elif [ "$RESTART_ISSUES" = true ]; then
         print_item "fail" "Critical backend services are failing — deployment is NOT healthy"
     else
-        print_item "fail" "Backend API failed readiness check (API HTTP: ${API_STATUS})"
-        print_item "info" "Check logs: ${DOCKER_CMD} logs api"
+        API_LOGS=$(${DOCKER_CMD} logs --tail 40 api 2>&1 || echo "Could not retrieve API logs")
+        PROXY_LOGS=$(${DOCKER_CMD} logs --tail 25 proxy 2>&1 || echo "Could not retrieve Proxy logs")
+        print_item "fail" "Backend API failed readiness check (Gateway: ${HTTP_STATUS}, API: ${API_STATUS})"
+        print_exact_error "Readiness Check Failed (Gateway HTTP: ${HTTP_STATUS}, API HTTP: ${API_STATUS})" "--- Last 40 API Logs ---\n${API_LOGS}\n\n--- Last 25 Proxy Logs ---\n${PROXY_LOGS}"
+        record_failure "STEP 5: Service Health Checks" "curl http://127.0.0.1:80/api/instances/" 1 "Gateway HTTP ${HTTP_STATUS}, API HTTP ${API_STATUS}\n${API_LOGS}"
         SETUP_SUCCESS=false
     fi
 else
@@ -418,57 +699,6 @@ else
 fi
 
 print_step_done
-
-# Dynamically detect host access IP or Domain (never hardcodes static IPs)
-detect_host_ip() {
-    # 0. User override via environment variable
-    if [ -n "$ONEFLOW_DOMAIN" ] && [ "$ONEFLOW_DOMAIN" != "13.234.29.32" ]; then
-        echo "$ONEFLOW_DOMAIN"
-        return
-    fi
-    if [ -n "$APP_DOMAIN" ] && [ "$APP_DOMAIN" != "13.234.29.32" ]; then
-        echo "$APP_DOMAIN"
-        return
-    fi
-
-    # 1. Configured domain in plane.env or .env (strictly ignoring legacy IP 13.234.29.32)
-    local env_ip=""
-    if [ -f "${DEPLOY_DIR}/plane.env" ]; then
-        env_ip=$(grep -E "^DOMAIN_NAME=" "${DEPLOY_DIR}/plane.env" 2>/dev/null | cut -d '=' -f2- | tr -d '"' | tr -d "'" | head -n 1 || true)
-    fi
-    if [ -z "$env_ip" ] && [ -f "${DEPLOY_DIR}/.env" ]; then
-        env_ip=$(grep -E "^DOMAIN_NAME=" "${DEPLOY_DIR}/.env" 2>/dev/null | cut -d '=' -f2- | tr -d '"' | tr -d "'" | head -n 1 || true)
-    fi
-    if [ -n "$env_ip" ] && [ "$env_ip" != "13.234.29.32" ] && [ "$env_ip" != "localhost" ] && [ "$env_ip" != "127.0.0.1" ] && [ "$env_ip" != "0.0.0.0" ]; then
-        echo "$env_ip"
-        return
-    fi
-
-    # 2. Public IP discovery services (fast 2s timeout)
-    local pub_ip=""
-    for srv in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com" "https://checkip.amazonaws.com"; do
-        pub_ip=$(curl -s --max-time 2 "$srv" 2>/dev/null || true)
-        if echo "$pub_ip" | grep -Eq '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
-            echo "$pub_ip"
-            return
-        fi
-    done
-
-    # 3. Default route / local network interface (excluding docker bridges 172.17/18)
-    local lan_ip=""
-    lan_ip=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[0-9.]+' || true)
-    if [ -z "$lan_ip" ]; then
-        lan_ip=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i !~ /^127\./ && $i !~ /^172\.(17|18)\./) {print $i; exit}}' || true)
-    fi
-    if [ -n "$lan_ip" ] && [ "$lan_ip" != "127.0.0.1" ]; then
-        echo "$lan_ip"
-        return
-    fi
-
-    echo "localhost"
-}
-
-APP_DOMAIN=$(detect_host_ip)
 
 # ==============================================================================
 # Summary & Application Status Dashboard
@@ -490,14 +720,12 @@ if [ "$SETUP_SUCCESS" = true ]; then
     box_row $DASH_W "  ${CLR_SUCCESS}${CLR_BOLD}●${CLR_RESET}  ${CLR_BOLD}one flow services are fully deployed and operational!${CLR_RESET}"
     box_row $DASH_W ""
     box_row $DASH_W "  ${CLR_BOLD}Service Endpoints:${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}Web App (Local):${CLR_RESET}   ${CLR_PRIMARY}http://localhost${CLR_RESET}"
-    if [ "$APP_DOMAIN" != "localhost" ] && [ "$APP_DOMAIN" != "127.0.0.1" ]; then
-        box_row $DASH_W "     ${CLR_TEXT}Web App (Network):${CLR_RESET} ${CLR_PRIMARY}http://${APP_DOMAIN}${CLR_RESET}"
-    fi
-    box_row $DASH_W "     ${CLR_TEXT}God Mode (Admin):${CLR_RESET} ${CLR_MUTED}http://localhost/god-mode/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}Spaces (Public):${CLR_RESET}  ${CLR_MUTED}http://localhost/spaces/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}REST API:${CLR_RESET}         ${CLR_MUTED}http://localhost/api/${CLR_RESET}"
-    box_row $DASH_W "     ${CLR_TEXT}Live Collab:${CLR_RESET}      ${CLR_MUTED}ws://localhost/live/ (WebSocket Engine)${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Web App (Origin):${CLR_RESET}  ${CLR_PRIMARY}${FINAL_ORIGIN}${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Web App (Local):${CLR_RESET}   ${CLR_MUTED}http://localhost${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}God Mode (Admin):${CLR_RESET} ${CLR_MUTED}${FINAL_ORIGIN}/god-mode/${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Spaces (Public):${CLR_RESET}  ${CLR_MUTED}${FINAL_ORIGIN}/spaces/${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}REST API:${CLR_RESET}         ${CLR_MUTED}${FINAL_ORIGIN}/api/${CLR_RESET}"
+    box_row $DASH_W "     ${CLR_TEXT}Live Collab:${CLR_RESET}      ${CLR_MUTED}${FINAL_ORIGIN}/live/ (WebSocket Engine)${CLR_RESET}"
     box_row $DASH_W ""
     box_row $DASH_W "  ${CLR_BOLD}Management Shortcuts:${CLR_RESET}"
     box_row $DASH_W "     ${CLR_TEXT}Live Logs:${CLR_RESET}  ${CLR_MUTED}${DOCKER_CMD} compose logs -f${CLR_RESET}"
@@ -510,9 +738,35 @@ if [ "$SETUP_SUCCESS" = true ]; then
     echo ""
     exit 0
 else
-    echo -e " ${CLR_DANGER}${CLR_BOLD}✗  Some issues occurred during setup.${CLR_RESET}"
-    echo -e " ${CLR_MUTED}Please review the failed steps above.${CLR_RESET}"
     echo ""
+    echo -e " ${CLR_DANGER}${CLR_BOLD}╭──────────────────────────────────────────────────────────────────────────╮${CLR_RESET}"
+    echo -e " ${CLR_DANGER}${CLR_BOLD}│  DEPLOYMENT FAILED — EXACT ERROR DIAGNOSTICS                            │${CLR_RESET}"
+    echo -e " ${CLR_DANGER}${CLR_BOLD}╰──────────────────────────────────────────────────────────────────────────╯${CLR_RESET}"
+    echo ""
+    
+    if [ ${#FAIL_STEPS[@]} -gt 0 ]; then
+        for ((idx=0; idx<${#FAIL_STEPS[@]}; idx++)); do
+            echo -e " ${CLR_DANGER}${CLR_BOLD}● Failure $((idx+1)): ${FAIL_STEPS[$idx]}${CLR_RESET}"
+            if [ -n "${FAIL_COMMANDS[$idx]}" ]; then
+                echo -e "   ${CLR_MUTED}Command:${CLR_RESET}   ${CLR_TEXT}${FAIL_COMMANDS[$idx]}${CLR_RESET}"
+            fi
+            if [ -n "${FAIL_EXITCODES[$idx]}" ]; then
+                echo -e "   ${CLR_MUTED}Exit Code:${CLR_RESET} ${CLR_DANGER}${FAIL_EXITCODES[$idx]}${CLR_RESET}"
+            fi
+            if [ -n "${FAIL_DETAILS[$idx]}" ]; then
+                echo -e "   ${CLR_MUTED}Exact Output:${CLR_RESET}"
+                while IFS= read -r f_line; do
+                    echo -e "     ${CLR_DANGER}│${CLR_RESET} ${f_line}"
+                done <<< "${FAIL_DETAILS[$idx]}"
+            fi
+            echo ""
+        done
+    else
+        echo -e " ${CLR_DANGER}Deployment failed during health verification.${CLR_RESET}"
+        echo -e " Please check: ${CLR_TEXT}${DOCKER_CMD} compose logs --tail 50${CLR_RESET}"
+        echo ""
+    fi
+
     echo -e " For assistance, visit: ${CLR_PRIMARY}https://github.com/sohan20051519/oneflow${CLR_RESET}"
     echo ""
     exit 1

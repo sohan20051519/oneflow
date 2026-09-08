@@ -73,15 +73,17 @@ def invalidate_cache(path=None, url_params=False, user=True, multiple=False):
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped_view(instance, request, *args, **kwargs):
-            # invalidate the cache
-            invalidate_cache_directly(
-                path=path,
-                url_params=url_params,
-                user=user,
-                request=request,
-                multiple=multiple,
-            )
-            return view_func(instance, request, *args, **kwargs)
+            response = view_func(instance, request, *args, **kwargs)
+            if response.status_code in [200, 201, 204]:
+                # invalidate the cache
+                invalidate_cache_directly(
+                    path=path,
+                    url_params=url_params,
+                    user=user,
+                    request=request,
+                    multiple=multiple,
+                )
+            return response
 
         return _wrapped_view
 

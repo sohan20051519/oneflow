@@ -236,3 +236,18 @@ class SignUpAuthEndpoint(View):
                 params=params,
             )
             return HttpResponseRedirect(url)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger("plane.authentication")
+            logger.exception("Unexpected error during email sign up")
+            exc = AuthenticationException(
+                error_code=AUTHENTICATION_ERROR_CODES["OIDC_PROVIDER_ERROR"],
+                error_message="SIGN_UP_FAILED",
+            )
+            params = exc.get_error_dict()
+            url = get_safe_redirect_url(
+                base_url=base_host(request=request, is_app=True),
+                next_path=next_path,
+                params=params,
+            )
+            return HttpResponseRedirect(url)

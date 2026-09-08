@@ -54,6 +54,9 @@ venv
 staticfiles
 mediafiles
 .env
+.env.*
+!.env.example
+apps/api/plane/authentication_commercial/
 .DS_Store
 logs/
 htmlcov/

@@ -1,5 +1,6 @@
 services:
   web:
+    image: plane-web:latest
     container_name: web
     build:
       context: .
@@ -15,6 +16,7 @@ services:
       - api
 
   admin:
+    image: plane-admin:latest
     container_name: admin
     build:
       context: .
@@ -31,6 +33,7 @@ services:
       - web
 
   space:
+    image: plane-space:latest
     container_name: space
     build:
       context: .
@@ -63,8 +66,23 @@ services:
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://plane-redis:6379/1}"
       GUNICORN_WORKERS: "${GUNICORN_WORKERS:-1}"
-      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:3000,http://127.0.0.1}"
+      ONEFLOW_DOMAIN: "${ONEFLOW_DOMAIN:-http://localhost}"
+      WEB_URL: "${WEB_URL:-${ONEFLOW_DOMAIN:-http://localhost}}"
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-}"
+      CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
       ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
+      AWS_REGION: "${AWS_REGION:-ap-south-1}"
+      AWS_STORAGE_BUCKET_NAME: "${AWS_STORAGE_BUCKET_NAME:-oneflow-staging-uploads}"
+      AWS_S3_BUCKET_NAME: "${AWS_STORAGE_BUCKET_NAME:-oneflow-staging-uploads}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+      USE_MINIO: "0"
+      AWS_S3_ENDPOINT_URL: ""
+      KEYCLOAK_CLIENT_ID: "${KEYCLOAK_CLIENT_ID:-}"
+      KEYCLOAK_CLIENT_SECRET: "${KEYCLOAK_CLIENT_SECRET:-}"
+      KEYCLOAK_ISSUER_URL: "${KEYCLOAK_ISSUER_URL:-}"
+      KEYCLOAK_DISCOVERY_URL: "${KEYCLOAK_DISCOVERY_URL:-}"
+      KEYCLOAK_SCOPES: "${KEYCLOAK_SCOPES:-openid profile email}"
     depends_on:
       plane-db:
         condition: service_healthy
@@ -91,6 +109,15 @@ services:
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://plane-redis:6379/1}"
       CELERY_WORKERS: "${CELERY_WORKERS:-1}"
       CELERY_MAX_TASKS_PER_CHILD: "50"
+      ONEFLOW_DOMAIN: "${ONEFLOW_DOMAIN:-http://localhost}"
+      WEB_URL: "${WEB_URL:-${ONEFLOW_DOMAIN:-http://localhost}}"
+      AWS_REGION: "${AWS_REGION:-ap-south-1}"
+      AWS_STORAGE_BUCKET_NAME: "${AWS_STORAGE_BUCKET_NAME:-oneflow-staging-uploads}"
+      AWS_S3_BUCKET_NAME: "${AWS_STORAGE_BUCKET_NAME:-oneflow-staging-uploads}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+      USE_MINIO: "0"
+      AWS_S3_ENDPOINT_URL: ""
     depends_on:
       api:
         condition: service_started
@@ -121,6 +148,7 @@ services:
         condition: service_healthy
 
   live:
+    image: plane-live:latest
     container_name: plane-live
     build:
       context: .
@@ -150,7 +178,7 @@ services:
     restart: always
     command: postgres -c 'max_connections=30' -c 'shared_buffers=32MB' -c 'effective_cache_size=128MB' -c 'work_mem=2MB' -c 'maintenance_work_mem=16MB' -c 'min_wal_size=32MB' -c 'max_wal_size=128MB'
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - /home/ubuntu/plane/data/db:/var/lib/postgresql/data
     env_file:
       - .env
     environment:
@@ -171,7 +199,7 @@ services:
     restart: always
     command: valkey-server --maxmemory 64mb --maxmemory-policy allkeys-lru
     volumes:
-      - redisdata:/data
+      - /home/ubuntu/plane/data/redis:/data
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
@@ -181,6 +209,7 @@ services:
 
   # Reverse proxy gateway
   proxy:
+    image: plane-proxy:latest
     container_name: proxy
     build:
       context: ./apps/proxy
@@ -192,13 +221,9 @@ services:
     environment:
       SITE_ADDRESS: "${SITE_ADDRESS:-:80}"
       FILE_SIZE_LIMIT: "${FILE_SIZE_LIMIT:-5242880}"
-      BUCKET_NAME: "${AWS_S3_BUCKET_NAME:-uploads}"
+      BUCKET_NAME: "${AWS_STORAGE_BUCKET_NAME:-oneflow-staging-uploads}"
     depends_on:
       - web
       - api
       - space
       - admin
-
-volumes:
-  pgdata:
-  redisdata:

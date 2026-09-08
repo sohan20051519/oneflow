@@ -141,11 +141,13 @@ export class BaseUserPermissionStore implements IBaseUserPermissionStore {
    */
   protected getProjectRole = computedFn((workspaceSlug: string, projectId?: string): EUserPermissions | undefined => {
     if (!workspaceSlug || !projectId) return undefined;
-    const projectRole = this.workspaceProjectsPermissions?.[workspaceSlug]?.[projectId];
-    if (!projectRole) return undefined;
     const workspaceRole = this.workspaceUserInfo?.[workspaceSlug]?.role;
     if (workspaceRole === EUserWorkspaceRoles.ADMIN) return EUserPermissions.ADMIN;
-    else return projectRole;
+    const projectRole = this.workspaceProjectsPermissions?.[workspaceSlug]?.[projectId];
+    if (projectRole) return projectRole;
+    const projectUserRole = this.projectUserInfo?.[workspaceSlug]?.[projectId]?.role;
+    if (projectUserRole) return projectUserRole as EUserPermissions;
+    return undefined;
   });
 
   /**
@@ -345,13 +347,19 @@ export class BaseUserPermissionStore implements IBaseUserPermissionStore {
   fetchUserProjectPermissions = async (workspaceSlug: string): Promise<IUserProjectsRole> => {
     try {
       const response = await workspaceService.getWorkspaceUserProjectsRole(workspaceSlug);
+      const roles = response || {};
       runInAction(() => {
-        set(this.workspaceProjectsPermissions, [workspaceSlug], response);
+        set(this.workspaceProjectsPermissions, [workspaceSlug], roles);
       });
-      return response;
+      return roles;
     } catch (error) {
       console.error("Error fetching user project permissions", error);
-      throw error;
+      runInAction(() => {
+        if (!this.workspaceProjectsPermissions[workspaceSlug]) {
+          set(this.workspaceProjectsPermissions, [workspaceSlug], {});
+        }
+      });
+      return {};
     }
   };
 

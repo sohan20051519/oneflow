@@ -280,12 +280,6 @@ class UserWorkspaceInvitationsViewSet(BaseViewSet):
 
         # If the user is already a member of workspace and was deactivated then activate the user
         for invitation in workspace_invitations:
-            invalidate_cache_directly(
-                path=f"/api/workspaces/{invitation.workspace.slug}/members/",
-                user=False,
-                request=request,
-                multiple=True,
-            )
             # Update the WorkspaceMember for this specific invitation
             WorkspaceMember.objects.filter(workspace_id=invitation.workspace_id, member=request.user).update(
                 is_active=True, role=invitation.role
@@ -318,6 +312,14 @@ class UserWorkspaceInvitationsViewSet(BaseViewSet):
             ],
             ignore_conflicts=True,
         )
+
+        for invitation in workspace_invitations:
+            invalidate_cache_directly(
+                path=f"/api/workspaces/{invitation.workspace.slug}/members/",
+                user=False,
+                request=request,
+                multiple=True,
+            )
 
         # Delete joined workspace invites
         workspace_invitations.delete()

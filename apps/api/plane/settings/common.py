@@ -177,14 +177,38 @@ TEMPLATES = [
 ]
 
 
+# Canonical Deployment Origin (Single Source of Truth)
+ONEFLOW_DOMAIN = os.environ.get("ONEFLOW_DOMAIN", "").strip().rstrip("/")
+if not ONEFLOW_DOMAIN:
+    ONEFLOW_DOMAIN = os.environ.get("WEB_URL", "").strip().rstrip("/")
+
+if ONEFLOW_DOMAIN and not (ONEFLOW_DOMAIN.startswith("http://") or ONEFLOW_DOMAIN.startswith("https://")):
+    ONEFLOW_DOMAIN = f"http://{ONEFLOW_DOMAIN}"
+
+_parsed_domain = urlparse(ONEFLOW_DOMAIN) if ONEFLOW_DOMAIN else None
+DOMAIN_SCHEME = _parsed_domain.scheme if _parsed_domain else "http"
+DOMAIN_HOST = _parsed_domain.netloc if _parsed_domain else ""
+DOMAIN_HOSTNAME = _parsed_domain.hostname if _parsed_domain else ""
+IS_HTTPS_DEPLOYMENT = DOMAIN_SCHEME == "https"
+
 # CORS Settings
 CORS_ALLOW_CREDENTIALS = True
 cors_origins_raw = os.environ.get("CORS_ALLOWED_ORIGINS", "")
 # filter out empty strings
-cors_allowed_origins = [origin.strip() for origin in cors_origins_raw.split(",") if origin.strip()]
+cors_allowed_origins = [origin.strip().rstrip("/") for origin in cors_origins_raw.split(",") if origin.strip()]
+
+# If CORS_ALLOWED_ORIGINS is not explicitly configured, derive from ONEFLOW_DOMAIN
+if not cors_allowed_origins and ONEFLOW_DOMAIN:
+    cors_allowed_origins = [
+        ONEFLOW_DOMAIN,
+        "http://localhost",
+        "http://localhost:3000",
+        "http://127.0.0.1",
+    ]
+
 if cors_allowed_origins:
     CORS_ALLOWED_ORIGINS = cors_allowed_origins
-    secure_origins = False if [origin for origin in cors_allowed_origins if "http:" in origin] else True
+    secure_origins = False if any(origin.startswith("http://") for origin in cors_allowed_origins) else True
 else:
     CORS_ALLOW_ALL_ORIGINS = True
     secure_origins = False
@@ -304,8 +328,8 @@ STORAGES = {"staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestSta
 STORAGES["default"] = {"BACKEND": "plane.settings.storage.S3Storage"}
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "access-key")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "secret-key")
-AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_S3_BUCKET_NAME", "uploads")
-AWS_REGION = os.environ.get("AWS_REGION", "")
+AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_STORAGE_BUCKET_NAME") or os.environ.get("AWS_S3_BUCKET_NAME", "oneflow-staging-uploads")
+AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
 AWS_DEFAULT_ACL = "public-read"
 AWS_QUERYSTRING_AUTH = False
 AWS_S3_FILE_OVERWRITE = False
@@ -389,7 +413,11 @@ ADMIN_SESSION_COOKIE_AGE = int(os.environ.get("ADMIN_SESSION_COOKIE_AGE", 3600))
 # CSRF cookies
 CSRF_COOKIE_SECURE = secure_origins
 CSRF_COOKIE_HTTPONLY = True
-CSRF_TRUSTED_ORIGINS = cors_allowed_origins
+csrf_trusted_raw = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+csrf_trusted_origins = [origin.strip().rstrip("/") for origin in csrf_trusted_raw.split(",") if origin.strip()]
+if not csrf_trusted_origins and ONEFLOW_DOMAIN:
+    csrf_trusted_origins = [ONEFLOW_DOMAIN]
+CSRF_TRUSTED_ORIGINS = csrf_trusted_origins if csrf_trusted_origins else (cors_allowed_origins or ["http://localhost"])
 CSRF_COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", None)
 CSRF_FAILURE_VIEW = "plane.authentication.views.common.csrf_failure"
 
@@ -421,8 +449,8 @@ LIVE_BASE_PATH = os.environ.get("LIVE_BASE_PATH", "/live/")
 
 LIVE_URL = urljoin(LIVE_BASE_URL, LIVE_BASE_PATH) if LIVE_BASE_URL else None
 
-# WEB URL
-WEB_URL = os.environ.get("WEB_URL")
+# WEB URL - defaults directly to ONEFLOW_DOMAIN
+WEB_URL = os.environ.get("WEB_URL") or ONEFLOW_DOMAIN or "http://localhost"
 
 HARD_DELETE_AFTER_DAYS = int(os.environ.get("HARD_DELETE_AFTER_DAYS", 60))
 

@@ -27,10 +27,14 @@ class S3Storage(S3Boto3Storage):
         self.aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
         # Use the AWS_SECRET_ACCESS_KEY environment variable for the secret key
         self.aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-        # Use the AWS_S3_BUCKET_NAME environment variable for the bucket name
-        self.aws_storage_bucket_name = os.environ.get("AWS_S3_BUCKET_NAME")
+        # Use the AWS_STORAGE_BUCKET_NAME or AWS_S3_BUCKET_NAME environment variable for the bucket name
+        self.aws_storage_bucket_name = (
+            os.environ.get("AWS_STORAGE_BUCKET_NAME")
+            or os.environ.get("AWS_S3_BUCKET_NAME")
+            or os.environ.get("BUCKET_NAME")
+        )
         # Use the AWS_REGION environment variable for the region
-        self.aws_region = os.environ.get("AWS_REGION")
+        self.aws_region = os.environ.get("AWS_REGION") or "ap-south-1"
         # Use the AWS_S3_ENDPOINT_URL environment variable for the endpoint URL
         endpoint = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("MINIO_ENDPOINT_URL")
         self.aws_s3_endpoint_url = endpoint if endpoint and endpoint.strip() else None
@@ -53,14 +57,22 @@ class S3Storage(S3Boto3Storage):
                 config=boto3.session.Config(signature_version="s3v4", connect_timeout=3, read_timeout=3),
             )
         else:
-            # Create an S3 client
+            # Create an S3 client for AWS S3
+            endpoint_url = self.aws_s3_endpoint_url
+            if not endpoint_url and self.aws_region:
+                endpoint_url = f"https://s3.{self.aws_region}.amazonaws.com"
             self.s3_client = boto3.client(
                 "s3",
                 aws_access_key_id=self.aws_access_key_id,
                 aws_secret_access_key=self.aws_secret_access_key,
                 region_name=self.aws_region,
-                endpoint_url=self.aws_s3_endpoint_url,
-                config=boto3.session.Config(signature_version="s3v4", connect_timeout=3, read_timeout=3),
+                endpoint_url=endpoint_url,
+                config=boto3.session.Config(
+                    signature_version="s3v4",
+                    s3={"addressing_style": "virtual"},
+                    connect_timeout=3,
+                    read_timeout=3,
+                ),
             )
 
     def generate_presigned_post(self, object_name, file_type, file_size, expiration=None):

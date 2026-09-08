@@ -152,6 +152,7 @@ class TUIState:
         self.step_statuses = ["pending"] * 5  # "pending", "active", "done", "fail"
         self.recent_activity = []
         self.logs = []
+        self.failures = []
 
         # Directory and Compose file resolution
         if os.path.isfile(os.path.join(self.script_dir, "docker-compose.yml")):
@@ -216,6 +217,10 @@ class TUIState:
         if cleaned:
             with self.lock:
                 self.logs.append((now, tag, cleaned))
+
+    def add_failure(self, step: str, command: str, code: int, details: str):
+        with self.lock:
+            self.failures.append((step, command, code, details))
 
     def render(self) -> str:
         cols, lines = shutil.get_terminal_size((80, 24))
@@ -529,21 +534,10 @@ class TUIState:
             except Exception as e:
                 self.log("env", f"Warning: could not sanitize apps/live/.env: {e}")
 
-        # Ensure DOMAIN_NAME in deploy configurations reflects current host IP
-        detected_ip = detect_server_ip(self.deploy_dir, self.source_dir)
-        if detected_ip and detected_ip not in ["localhost", "127.0.0.1", "13.234.29.32"]:
-            for env_candidate in [plane_env, os.path.join(self.source_dir, ".env")]:
-                if os.path.isfile(env_candidate):
-                    try:
-                        with open(env_candidate, "r") as f:
-                            c = f.read()
-                        if "13.234.29.32" in c:
-                            c = c.replace("13.234.29.32", detected_ip)
-                            with open(env_candidate, "w") as f:
-                                f.write(c)
-                            self.log("env", f"Updated legacy IP in {os.path.basename(env_candidate)} to {detected_ip}")
-                    except Exception:
-                        pass
+        # Check ONEFLOW_DOMAIN in environment configurations
+        configured_domain = detect_server_ip(self.deploy_dir, self.source_dir)
+        if configured_domain:
+            self.log("env", f"Active deployment origin: {configured_domain}")
 
         self.set_progress(20, "Environment configurations verified")
         time.sleep(0.4)
@@ -658,9 +652,11 @@ class TUIState:
         compose_args.extend(["up", "-d", "--build"])
         self.log("compose", f"Executing: {' '.join(compose_args)}")
         
+        compose_output = []
         proc = subprocess.Popen(compose_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         for line in proc.stdout:
             self.log("compose", line)
+            compose_output.append(line.rstrip())
         proc.wait()
 
         if proc.returncode == 0:
@@ -669,8 +665,10 @@ class TUIState:
             self.add_activity("ok", f"Orchestrated {len(active_cts)} services in background")
             self.log("compose", f"Active container count: {len(active_cts)}")
         else:
-            self.add_activity("fail", "Failed to start Docker Compose services")
-            self.log("compose", "Docker Compose up returned non-zero code")
+            err_snip = "\n".join(compose_output[-35:]) if compose_output else "Docker compose up returned non-zero code"
+            self.add_activity("fail", f"Failed to start Docker Compose services (code {proc.returncode})")
+            self.log("compose", f"Docker Compose up returned code {proc.returncode}")
+            self.add_failure(self.step_names[3], " ".join(compose_args), proc.returncode, err_snip)
             self.setup_success = False
             return
 
@@ -699,16 +697,20 @@ class TUIState:
                     self.add_activity("ok", "Database migrations completed successfully (exit code 0)")
                     self.log("health", "plane-migrator completed successfully (exit code 0)")
                 else:
+                    mig_logs = subprocess.run(self.docker_cmd + ["logs", "--tail", "40", "plane-migrator"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
                     self.add_activity("fail", f"Database migrations FAILED (exit code {exit_code})")
-                    self.log("health", f"plane-migrator failed with exit code {exit_code}; inspect logs: docker logs plane-migrator")
+                    self.log("health", f"plane-migrator failed with exit code {exit_code}")
+                    self.add_failure("Database Migrations", f"{' '.join(self.docker_cmd)} logs plane-migrator", int(exit_code) if exit_code.isdigit() else 1, mig_logs or "No log output")
                     self.setup_success = False
                     return
                 break
             time.sleep(2)
 
         if not migrator_ok:
+            mig_logs = subprocess.run(self.docker_cmd + ["logs", "--tail", "30", "plane-migrator"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
             self.add_activity("fail", "Database migrations timed out waiting for completion")
             self.log("health", "plane-migrator did not exit within timeout period")
+            self.add_failure("Database Migrations Timeout", f"{' '.join(self.docker_cmd)} inspect plane-migrator", 124, mig_logs or "plane-migrator did not exit in time")
             self.setup_success = False
             return
 
@@ -757,7 +759,7 @@ class TUIState:
 
         # --- Phase 3: Check for Container Crash Loops ---
         restart_issues = False
-        for svc in ["api", "bgworker"]:
+        for svc in ["api", "bgworker", "web", "proxy"]:
             stat_res = subprocess.run(self.docker_cmd + ["inspect", "--format", "{{.State.Status}}", svc],
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
             status = stat_res.stdout.strip()
@@ -769,8 +771,10 @@ class TUIState:
                 restarts = 0
 
             if status == "restarting" or restarts > 2:
+                svc_logs = subprocess.run(self.docker_cmd + ["logs", "--tail", "35", svc], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
                 self.add_activity("fail", f"Service '{svc}' is crash-looping (restarts: {restarts})")
-                self.log("health", f"Service '{svc}' status={status}, restarts={restarts}; check: docker logs {svc}")
+                self.log("health", f"Service '{svc}' status={status}, restarts={restarts}")
+                self.add_failure(f"Container Crash-Loop ({svc})", f"{' '.join(self.docker_cmd)} logs {svc}", 1, svc_logs or f"Service {svc} is in restart loop")
                 restart_issues = True
                 self.setup_success = False
 
@@ -784,8 +788,10 @@ class TUIState:
             self.log("health", "Backend containers failing/restarting; deployment marked as failed")
             self.setup_success = False
         else:
+            api_logs = subprocess.run(self.docker_cmd + ["logs", "--tail", "40", "api"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
             self.add_activity("fail", f"Backend API failed health check (HTTP {api_code})")
             self.log("health", f"Health check failed: Gateway={http_code}, API={api_code}")
+            self.add_failure("Backend API Health Check", "curl http://127.0.0.1:80/api/instances/", 1, f"Gateway HTTP: {http_code}, API HTTP: {api_code}\n\n--- API Logs ---\n{api_logs}")
             self.setup_success = False
 
         self.set_progress(100, "one flow deployment verification complete")
@@ -798,10 +804,10 @@ def detect_server_ip(deploy_dir: str, source_dir: str) -> str:
     """
     # 0. User override via environment variable
     env_override = os.environ.get("ONEFLOW_DOMAIN") or os.environ.get("APP_DOMAIN")
-    if env_override and env_override.strip() not in ["13.234.29.32", "localhost", "127.0.0.1", "0.0.0.0", ""]:
+    if env_override and env_override.strip() not in ["localhost", "127.0.0.1", "0.0.0.0", ""]:
         return env_override.strip()
 
-    # 1. Check if configured in plane.env or .env (strictly ignoring legacy hardcoded IP 13.234.29.32)
+    # 1. Check if configured in plane.env or .env
     for env_path in [
         os.path.join(deploy_dir, "plane.env"),
         os.path.join(source_dir, ".env"),
@@ -812,9 +818,9 @@ def detect_server_ip(deploy_dir: str, source_dir: str) -> str:
                 with open(env_path, "r") as f:
                     for line in f:
                         line = line.strip()
-                        if line.startswith("DOMAIN_NAME=") or line.startswith("APP_DOMAIN="):
+                        if line.startswith("ONEFLOW_DOMAIN=") or line.startswith("DOMAIN_NAME=") or line.startswith("APP_DOMAIN="):
                             val = line.split("=", 1)[1].strip().strip('"\'')
-                            if val and val not in ["13.234.29.32", "localhost", "127.0.0.1", "0.0.0.0", ""]:
+                            if val and val not in ["localhost", "127.0.0.1", "0.0.0.0", ""]:
                                 return val
             except Exception:
                 pass
@@ -874,6 +880,89 @@ def detect_server_ip(deploy_dir: str, source_dir: str) -> str:
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     is_tty = sys.stdout.isatty()
+
+    deploy_dir = script_dir
+    if not os.path.isfile(os.path.join(deploy_dir, "plane.env")) and os.path.isfile(os.path.join(os.path.dirname(deploy_dir), "plane.env")):
+        deploy_dir = os.path.dirname(deploy_dir)
+
+    # Domain CLI parameter or interactive prompt
+    cli_domain = None
+    for i, arg in enumerate(sys.argv):
+        if arg in ["--domain", "-d"] and i + 1 < len(sys.argv):
+            cli_domain = sys.argv[i + 1]
+        elif arg.startswith("--domain="):
+            cli_domain = arg.split("=", 1)[1]
+
+    if not cli_domain and not os.environ.get("ONEFLOW_DOMAIN_CONFIGURED") and sys.stdin.isatty():
+        default_candidate = detect_server_ip(deploy_dir, script_dir)
+        if not default_candidate.startswith("http://") and not default_candidate.startswith("https://"):
+            if default_candidate in ["localhost", "127.0.0.1"] or re.match(r'^\d+\.\d+\.\d+\.\d+', default_candidate):
+                default_domain = f"http://{default_candidate}"
+            else:
+                default_domain = f"https://{default_candidate}"
+        else:
+            default_domain = default_candidate
+
+        print(f"\n {CLR_PRIMARY}{CLR_BOLD}╭─[ DEPLOYMENT DOMAIN CONFIGURATION ]────────────────────────╮{CLR_RESET}")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_BOLD}Enter the public domain or IP address for OneFlow.{CLR_RESET}        {CLR_PRIMARY}│{CLR_RESET}")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_MUTED}Examples: https://oneflow.cubeone.in or http://13.234.29.32{CLR_RESET} {CLR_PRIMARY}│{CLR_RESET}")
+        print(f" {CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯{CLR_RESET}\n")
+        try:
+            val = input(f" Enter Domain [default: {default_domain}]: ").strip()
+            cli_domain = val if val else default_domain
+        except (EOFError, KeyboardInterrupt):
+            print("")
+            sys.exit(1)
+
+    if cli_domain:
+        cli_domain = cli_domain.strip().rstrip("/")
+        if not (cli_domain.startswith("http://") or cli_domain.startswith("https://")):
+            if cli_domain in ["localhost", "127.0.0.1"] or re.match(r'^\d+\.\d+\.\d+\.\d+', cli_domain):
+                final_origin = f"http://{cli_domain}"
+            else:
+                final_origin = f"https://{cli_domain}"
+        else:
+            final_origin = cli_domain
+
+        parsed = urllib.parse.urlparse(final_origin)
+        final_host = parsed.hostname or final_origin.split("://")[-1].split("/")[0].split(":")[0]
+        final_scheme = parsed.scheme or "http"
+
+        os.environ["ONEFLOW_DOMAIN"] = final_origin
+        os.environ["DOMAIN_NAME"] = final_host
+        os.environ["WEB_URL"] = final_origin
+        os.environ["APP_DOMAIN"] = final_host
+        os.environ["APP_PROTOCOL"] = final_scheme
+        os.environ["ONEFLOW_DOMAIN_CONFIGURED"] = "1"
+
+        # Persist to plane.env and .env files
+        for target_env in [
+            os.path.join(deploy_dir, "plane.env"),
+            os.path.join(os.path.dirname(deploy_dir), "plane.env"),
+            os.path.join(script_dir, ".env"),
+            os.path.join(deploy_dir, ".env"),
+        ]:
+            if os.path.isfile(target_env):
+                try:
+                    with open(target_env, "r") as f:
+                        env_c = f.read()
+                    if "ONEFLOW_DOMAIN=" in env_c:
+                        env_c = re.sub(r'^ONEFLOW_DOMAIN=.*', f'ONEFLOW_DOMAIN={final_origin}', env_c, flags=re.MULTILINE)
+                    else:
+                        env_c += f'\nONEFLOW_DOMAIN={final_origin}\n'
+                    if "DOMAIN_NAME=" in env_c:
+                        env_c = re.sub(r'^DOMAIN_NAME=.*', f'DOMAIN_NAME={final_host}', env_c, flags=re.MULTILINE)
+                    else:
+                        env_c += f'\nDOMAIN_NAME={final_host}\n'
+                    with open(target_env, "w") as f:
+                        f.write(env_c)
+                except Exception:
+                    pass
+
+        print(f"\n {CLR_SUCCESS}✓{CLR_RESET}  {CLR_BOLD}Deployment domain configured:{CLR_RESET} {CLR_PRIMARY}{final_origin}{CLR_RESET} (host: {final_host})")
+        print(f" {CLR_MUTED}Starting deployment setup...{CLR_RESET}\n")
+        time.sleep(0.5)
+
     # Pre-authenticate sudo cleanly before altering termios or entering alternate screen buffer
     try:
         r_docker = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1006,8 +1095,26 @@ def main():
         print(f" {CLR_MUTED}Documentation & Support:{CLR_RESET} {CLR_PRIMARY}https://github.com/sohan20051519/oneflow{CLR_RESET}\n")
         sys.exit(0)
     else:
-        print(f" {CLR_DANGER}{CLR_BOLD}✗  Some issues occurred during setup.{CLR_RESET}")
-        print(f" {CLR_MUTED}Please review the failed steps and live logs above.{CLR_RESET}\n")
+        print(f"\n {CLR_DANGER}{CLR_BOLD}╭──────────────────────────────────────────────────────────────────────────╮{CLR_RESET}")
+        print(f" {CLR_DANGER}{CLR_BOLD}│  DEPLOYMENT FAILED — EXACT ERROR DIAGNOSTICS                            │{CLR_RESET}")
+        print(f" {CLR_DANGER}{CLR_BOLD}╰──────────────────────────────────────────────────────────────────────────╯{CLR_RESET}\n")
+
+        if tui.failures:
+            for idx, (f_step, f_cmd, f_code, f_details) in enumerate(tui.failures, 1):
+                print(f" {CLR_DANGER}{CLR_BOLD}● Failure {idx}: {f_step}{CLR_RESET}")
+                if f_cmd:
+                    print(f"   {CLR_MUTED}Command:{CLR_RESET}   {CLR_TEXT}{f_cmd}{CLR_RESET}")
+                if f_code:
+                    print(f"   {CLR_MUTED}Exit Code:{CLR_RESET} {CLR_DANGER}{f_code}{CLR_RESET}")
+                if f_details:
+                    print(f"   {CLR_MUTED}Exact Output:{CLR_RESET}")
+                    for f_line in f_details.splitlines():
+                        print(f"     {CLR_DANGER}│{CLR_RESET} {f_line}")
+                print("")
+        else:
+            print(f" {CLR_DANGER}Some issues occurred during setup. Review container logs:{CLR_RESET}")
+            print(f"   {' '.join(tui.docker_cmd)} compose logs --tail 50\n")
+
         print(f" For assistance, visit: {CLR_PRIMARY}https://github.com/sohan20051519/oneflow{CLR_RESET}\n")
         sys.exit(1)
 

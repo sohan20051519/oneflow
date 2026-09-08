@@ -72,7 +72,7 @@ class EmailProvider(CredentialAdapter):
 
             # Check user password
             if not user.check_password(self.code):
-                self.logger.warning("Authentication failed - invalid credentials")
+                self.logger.warning(f"Authentication failed - invalid credentials for email: {self.key}")
                 raise AuthenticationException(
                     error_message=(
                         "AUTHENTICATION_FAILED_SIGN_UP" if self.is_signup else "AUTHENTICATION_FAILED_SIGN_IN"
