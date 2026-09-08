@@ -53,11 +53,10 @@ function WorkspaceInvitationPage() {
         token: token,
       })
       .then(() => {
-        if (invitationDetail.email === currentUser?.email) {
-          router.push(`/${invitationDetail.workspace.slug}`);
-        } else {
-          router.push("/");
-        }
+        // Always navigate to the accepted workspace.
+        // The backend already validates that the authenticated user matches
+        // the invitation email, so we can safely redirect here.
+        router.push(`/${invitationDetail.workspace.slug}`);
       })
       .catch((err: unknown) => console.error(err));
   };
