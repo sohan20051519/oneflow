@@ -56,8 +56,13 @@ def decrypt_data(encrypted_data):
             except Exception:
                 continue
 
+        # If data is not a Fernet token (Fernet tokens start with gAAAAA),
+        # return the raw plaintext value rather than destroying/blanking it out
+        if encrypted_data and not encrypted_data.startswith("gAAAAA"):
+            return encrypted_data
+
         return ""
     except Exception as e:
         log_exception(e)
-        return ""
+        return encrypted_data if (encrypted_data and not encrypted_data.startswith("gAAAAA")) else ""
 

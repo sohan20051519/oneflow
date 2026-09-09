@@ -940,6 +940,8 @@ def fetch_infisical_secrets(deploy_dir: str, env_name: str) -> bool:
                 cid = input(" Enter Infisical Client ID: ").strip()
                 csec = getpass.getpass(" Enter Infisical Client Secret: ").strip()
                 if cid and csec:
+                    client_id = cid
+                    client_secret = csec
                     login_url = f"{infisical_host}/api/v1/auth/universal-auth/login"
                     req = urllib.request.Request(
                         login_url,
@@ -1012,11 +1014,31 @@ def fetch_infisical_secrets(deploy_dir: str, env_name: str) -> bool:
 
     for k, v in infisical_meta.items():
         existing_vars[k] = v
+        os.environ[k] = v
 
     existing_vars["ENVIRONMENT"] = env_name
     with open(plane_env_path, "w") as f:
         for k, v in sorted(existing_vars.items()):
             f.write(f"{k}={v}\n")
+
+    # Also persist Infisical connection metadata into apps/api/.env so containers receive it
+    api_env_path = os.path.join(deploy_dir, "apps", "api", ".env")
+    if not os.path.isfile(api_env_path) and os.path.isfile(os.path.join(os.path.dirname(deploy_dir), "apps", "api", ".env")):
+        api_env_path = os.path.join(os.path.dirname(deploy_dir), "apps", "api", ".env")
+    if os.path.isdir(os.path.dirname(api_env_path)):
+        api_vars = {}
+        if os.path.isfile(api_env_path):
+            with open(api_env_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        api_vars[k.strip()] = v.strip()
+        for k, v in infisical_meta.items():
+            api_vars[k] = v
+        with open(api_env_path, "w") as f:
+            for k, v in sorted(api_vars.items()):
+                f.write(f"{k}={v}\n")
 
     print(f" {CLR_SUCCESS}✓{CLR_RESET}  OneFlow will fetch secrets directly from Infisical at runtime (zero secrets written to plane.env).")
     return True

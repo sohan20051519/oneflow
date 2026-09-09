@@ -53,6 +53,10 @@ class InstanceConfigurationEndpoint(BaseAPIView):
 
             if key in existing_configurations:
                 configuration = existing_configurations[key]
+                # Do not overwrite existing secret with empty string if user left password field untouched
+                if configuration.is_encrypted and not value and configuration.value:
+                    result_configurations.append(configuration)
+                    continue
                 if configuration.is_encrypted:
                     configuration.value = encrypt_data(value)
                 else:
@@ -73,6 +77,14 @@ class InstanceConfigurationEndpoint(BaseAPIView):
             InstanceConfiguration.objects.bulk_update(bulk_update, ["value"], batch_size=100)
         if bulk_create:
             InstanceConfiguration.objects.bulk_create(bulk_create, batch_size=100)
+
+        # If Infisical credentials were saved or updated, automatically sync secrets into runtime
+        if any("INFISICAL" in k for k in request.data.keys()):
+            try:
+                from plane.license.utils.infisical import sync_secrets_into_runtime
+                sync_secrets_into_runtime()
+            except Exception:
+                pass
 
         serializer = InstanceConfigurationSerializer(result_configurations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

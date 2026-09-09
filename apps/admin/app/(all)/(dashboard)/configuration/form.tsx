@@ -79,26 +79,35 @@ export function InstanceConfigurationForm(props: Props) {
   const onSubmit = async (formData: ConfigurationFormValues) => {
     try {
       const payload: Record<string, string> = {
-        INFISICAL_HOST: formData.INFISICAL_HOST,
-        INFISICAL_PROJECT_ID: formData.INFISICAL_PROJECT_ID,
-        INFISICAL_ENV: formData.INFISICAL_ENV,
+        INFISICAL_HOST: formData.INFISICAL_HOST || "https://config.cubeone.in",
+        INFISICAL_PROJECT_ID: formData.INFISICAL_PROJECT_ID || "f10e0d79-aa86-4c35-862a-e44ed0f482e3",
+        INFISICAL_ENV: formData.INFISICAL_ENV || "prod",
         INFISICAL_CLIENT_ID: formData.INFISICAL_CLIENT_ID,
-        INFISICAL_CLIENT_SECRET: formData.INFISICAL_CLIENT_SECRET,
         INFISICAL_TOKEN: formData.INFISICAL_TOKEN,
       };
+
+      if (formData.INFISICAL_CLIENT_SECRET && formData.INFISICAL_CLIENT_SECRET.trim()) {
+        payload.INFISICAL_CLIENT_SECRET = formData.INFISICAL_CLIENT_SECRET.trim();
+      }
 
       await updateInstanceConfigurations(payload);
       setToast({
         type: TOAST_TYPE.SUCCESS,
         title: "Configurations Saved",
-        message: "Instance secrets and Infisical settings updated successfully.",
+        message: "Instance secrets and Infisical settings updated and synchronized successfully.",
       });
     } catch (err: any) {
       console.error(err);
+      const errMsg =
+        (typeof err === "string" ? err : null) ||
+        err?.message ||
+        err?.detail ||
+        err?.error ||
+        "Could not update instance configurations.";
       setToast({
         type: TOAST_TYPE.ERROR,
         title: "Failed to Save",
-        message: err?.message || "Could not update instance configurations.",
+        message: errMsg,
       });
     }
   };

@@ -371,6 +371,8 @@ fetch_infisical_secrets() {
             read -r -s -p " Enter Infisical Client Secret: " CSEC
             echo ""
             if [ -n "$CID" ] && [ -n "$CSEC" ]; then
+                export INFISICAL_CLIENT_ID="$CID"
+                export INFISICAL_CLIENT_SECRET="$CSEC"
                 local login_resp
                 login_resp=$(curl -s -X POST "${infisical_host}/api/v1/auth/universal-auth/login" \
                     -H "Content-Type: application/json" \
