@@ -22,24 +22,35 @@ class S3Storage(S3Boto3Storage):
 
     """S3 storage class to generate presigned URLs for S3 objects"""
 
+    def _get_config_value(self, key, default=None):
+        val = os.environ.get(key)
+        if val and val.strip():
+            return val.strip()
+        try:
+            from plane.license.models import InstanceConfiguration
+            from plane.license.utils.encryption import decrypt_data
+            item = InstanceConfiguration.objects.filter(key=key).first()
+            if item and item.value:
+                res = decrypt_data(item.value) if item.is_encrypted else item.value
+                if res and res.strip():
+                    return res.strip()
+        except Exception:
+            pass
+        return default
+
     def __init__(self, request=None):
-        # Get the AWS credentials and bucket name from the environment
-        self.aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
-        # Use the AWS_SECRET_ACCESS_KEY environment variable for the secret key
-        self.aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-        # Use the AWS_STORAGE_BUCKET_NAME or AWS_S3_BUCKET_NAME environment variable for the bucket name
+        # Get the AWS credentials and bucket name from environment or instance configurations
+        self.aws_access_key_id = self._get_config_value("AWS_ACCESS_KEY_ID")
+        self.aws_secret_access_key = self._get_config_value("AWS_SECRET_ACCESS_KEY")
         self.aws_storage_bucket_name = (
-            os.environ.get("AWS_STORAGE_BUCKET_NAME")
-            or os.environ.get("AWS_S3_BUCKET_NAME")
-            or os.environ.get("BUCKET_NAME")
+            self._get_config_value("AWS_STORAGE_BUCKET_NAME")
+            or self._get_config_value("AWS_S3_BUCKET_NAME")
+            or self._get_config_value("BUCKET_NAME")
         )
-        # Use the AWS_REGION environment variable for the region
-        self.aws_region = os.environ.get("AWS_REGION") or "ap-south-1"
-        # Use the AWS_S3_ENDPOINT_URL environment variable for the endpoint URL
-        endpoint = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("MINIO_ENDPOINT_URL")
+        self.aws_region = self._get_config_value("AWS_REGION", "ap-south-1")
+        endpoint = self._get_config_value("AWS_S3_ENDPOINT_URL") or self._get_config_value("MINIO_ENDPOINT_URL")
         self.aws_s3_endpoint_url = endpoint if endpoint and endpoint.strip() else None
-        # Use the SIGNED_URL_EXPIRATION environment variable for the expiration time (default: 3600 seconds)
-        self.signed_url_expiration = int(os.environ.get("SIGNED_URL_EXPIRATION", "3600"))
+        self.signed_url_expiration = int(self._get_config_value("SIGNED_URL_EXPIRATION", "3600"))
 
         if os.environ.get("USE_MINIO") == "1":
             # Determine protocol based on environment variable
