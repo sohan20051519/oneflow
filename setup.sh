@@ -90,9 +90,27 @@ else
     COMPOSE_FILE="${SOURCE_DIR}/docker-compose.yml"
 fi
 
+# Auto-clone repository if running in a standalone directory without source code
+if [ ! -f "${SOURCE_DIR}/docker-compose.yml" ] && [ ! -f "${SOURCE_DIR}/.env.example" ]; then
+    echo -e " \033[38;2;56;189;248mℹ\033[0m  OneFlow source tree not found in ${SOURCE_DIR}. Cloning repository..."
+    if command -v git >/dev/null 2>&1; then
+        git clone https://github.com/sohan20051519/oneflow.git "${SOURCE_DIR}"
+        if [ $? -eq 0 ]; then
+            echo -e " \033[38;2;34;163;75m✓\033[0m  Successfully cloned OneFlow source into ${SOURCE_DIR}"
+        else
+            echo -e " \033[38;2;239;68;68m✗\033[0m  Failed to clone repository. Please verify your internet connection."
+        fi
+    else
+        echo -e " \033[38;2;239;68;68m✗\033[0m  git is required to fetch source code. Please install git (e.g. apt install -y git)"
+    fi
+fi
+
 # If plane.env is not in DEPLOY_DIR but is in parent directory, resolve DEPLOY_DIR to parent
 if [ ! -f "${DEPLOY_DIR}/plane.env" ] && [ -f "$(dirname "${DEPLOY_DIR}")/plane.env" ]; then
     DEPLOY_DIR="$(dirname "${DEPLOY_DIR}")"
+elif [ ! -f "${DEPLOY_DIR}/plane.env" ] && [ -f "${SOURCE_DIR}/deployments/aio/community/variables.env" ]; then
+    cp "${SOURCE_DIR}/deployments/aio/community/variables.env" "${DEPLOY_DIR}/plane.env"
+    ln -sf plane.env "${DEPLOY_DIR}/.env" 2>/dev/null || true
 fi
 
 # Detect Docker command (supports rootless and sudo)
