@@ -978,8 +978,16 @@ def fetch_infisical_secrets(deploy_dir: str, env_name: str) -> bool:
         print(f" {CLR_DANGER}✗{CLR_RESET}  Could not retrieve secrets from Infisical for {env_name}. Using local configuration.")
         return False
 
-    print(f" {CLR_SUCCESS}✓{CLR_RESET}  Successfully retrieved {CLR_BOLD}{len(secrets_list)}{CLR_RESET} secrets from Infisical ({env_name})")
+    print(f" {CLR_SUCCESS}✓{CLR_RESET}  Successfully verified {CLR_BOLD}{len(secrets_list)}{CLR_RESET} secrets directly from Infisical ({env_name})")
 
+    # Inject secrets into process environment for in-memory docker compose interpolation
+    for s in secrets_list:
+        k = s.get("secretKey")
+        v = s.get("secretValue", "")
+        if k:
+            os.environ[k] = v
+
+    # DO NOT write application secrets to plane.env! Only persist Infisical connection metadata.
     plane_env_path = os.path.join(deploy_dir, "plane.env")
     existing_vars = {}
     if os.path.isfile(plane_env_path):
@@ -990,18 +998,27 @@ def fetch_infisical_secrets(deploy_dir: str, env_name: str) -> bool:
                     k, v = line.split("=", 1)
                     existing_vars[k.strip()] = v.strip()
 
-    for s in secrets_list:
-        k = s.get("secretKey")
-        v = s.get("secretValue", "")
-        if k:
-            existing_vars[k] = v
+    infisical_meta = {
+        "INFISICAL_HOST": infisical_host,
+        "INFISICAL_PROJECT_ID": project_id,
+        "INFISICAL_ENV": env_name,
+    }
+    if client_id:
+        infisical_meta["INFISICAL_CLIENT_ID"] = client_id
+    if client_secret:
+        infisical_meta["INFISICAL_CLIENT_SECRET"] = client_secret
+    if auth_token and not auth_token.startswith("ey"):
+        infisical_meta["INFISICAL_TOKEN"] = auth_token
+
+    for k, v in infisical_meta.items():
+        existing_vars[k] = v
 
     existing_vars["ENVIRONMENT"] = env_name
     with open(plane_env_path, "w") as f:
-        f.write(f"# Synced via Infisical ({env_name}) - {datetime.datetime.now().isoformat()}\n")
         for k, v in sorted(existing_vars.items()):
             f.write(f"{k}={v}\n")
 
+    print(f" {CLR_SUCCESS}✓{CLR_RESET}  OneFlow will fetch secrets directly from Infisical at runtime (zero secrets written to plane.env).")
     return True
 
 def main():

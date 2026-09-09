@@ -17,6 +17,7 @@ import {
   Cloud,
   Layers,
   Lock,
+  Zap,
 } from "lucide-react";
 // propel & ui components
 import { Button } from "@plane/propel/button";
@@ -48,12 +49,14 @@ export function InstanceConfigurationForm(props: Props) {
   const { updateInstanceConfigurations } = useInstance();
 
   const [isTestingInfisical, setIsTestingInfisical] = useState(false);
+  const [isSyncingInfisical, setIsSyncingInfisical] = useState(false);
   const [testResult, setTestResult] = useState<{ status: "success" | "error"; message: string } | null>(null);
 
   const {
     handleSubmit,
     control,
     watch,
+    getValues,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<ConfigurationFormValues>({
     defaultValues: {
@@ -135,6 +138,52 @@ export function InstanceConfigurationForm(props: Props) {
     }
   };
 
+  const handleSyncInfisical = async () => {
+    setIsSyncingInfisical(true);
+    setTestResult(null);
+    try {
+      const payload = {
+        host: getValues("INFISICAL_HOST"),
+        project_id: getValues("INFISICAL_PROJECT_ID"),
+        environment: getValues("INFISICAL_ENV"),
+        client_id: getValues("INFISICAL_CLIENT_ID"),
+        client_secret: getValues("INFISICAL_CLIENT_SECRET"),
+        token: getValues("INFISICAL_TOKEN"),
+      };
+      const res = await fetch("/api/instances/configurations/sync-infisical/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to sync secrets directly from Infisical.");
+      }
+      setTestResult({
+        status: "success",
+        message: data.message || `Successfully synced ${data.count} secrets directly from Infisical into runtime without writing to plane.env!`,
+      });
+      setToast({
+        type: TOAST_TYPE.SUCCESS,
+        title: "Direct Sync Successful",
+        message: data.message || "Secrets synchronized directly into runtime.",
+      });
+    } catch (e: any) {
+      const msg = e?.message || "Could not sync directly from Infisical.";
+      setTestResult({
+        status: "error",
+        message: msg,
+      });
+      setToast({
+        type: TOAST_TYPE.ERROR,
+        title: "Sync Failed",
+        message: msg,
+      });
+    } finally {
+      setIsSyncingInfisical(false);
+    }
+  };
+
   return (
     <div className="space-y-10 pb-12">
       {/* Overview Card: Infisical Production Status */}
@@ -158,7 +207,7 @@ export function InstanceConfigurationForm(props: Props) {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
               size="md"
@@ -168,6 +217,16 @@ export function InstanceConfigurationForm(props: Props) {
             >
               <RefreshCw className={`h-4 w-4 ${isTestingInfisical ? "animate-spin" : ""}`} />
               Test Connection
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={handleSyncInfisical}
+              loading={isSyncingInfisical}
+              className="flex items-center gap-2"
+            >
+              <Zap className={`h-4 w-4 ${isSyncingInfisical ? "animate-spin" : ""}`} />
+              Sync Directly from Infisical
             </Button>
             <a
               href={infisicalHost}

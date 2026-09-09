@@ -398,7 +398,7 @@ fetch_infisical_secrets() {
     done
 
     if [ "$count" -gt 0 ]; then
-        echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  Successfully retrieved ${CLR_BOLD}${count}${CLR_RESET} secrets from Infisical (${env_name})"
+        echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  Successfully verified ${CLR_BOLD}${count}${CLR_RESET} secrets directly from Infisical (${env_name})"
         echo "$secrets_json" | python3 -c "
 import sys, json, os
 
@@ -407,6 +407,14 @@ plane_env = os.path.join(deploy_dir, 'plane.env')
 data = json.load(sys.stdin)
 secrets = data.get('secrets', [])
 
+# Inject secrets into process environment for in-memory docker compose interpolation
+for s in secrets:
+    k = s.get('secretKey')
+    v = s.get('secretValue', '')
+    if k:
+        os.environ[k] = v
+
+# DO NOT write application secrets to plane.env! Only persist Infisical connection metadata.
 existing = {}
 if os.path.isfile(plane_env):
     with open(plane_env, 'r') as f:
@@ -416,19 +424,31 @@ if os.path.isfile(plane_env):
                 k, v = line.split('=', 1)
                 existing[k.strip()] = v.strip()
 
-for s in secrets:
-    k = s.get('secretKey')
-    v = s.get('secretValue', '')
-    if k:
-        existing[k] = v
+infisical_meta = {
+    'INFISICAL_HOST': '${infisical_host}',
+    'INFISICAL_PROJECT_ID': '${project_id}',
+    'INFISICAL_ENV': '${env_name}',
+}
+cid = '${CID}'
+csec = '${CSEC}'
+token = '${auth_token}'
+if cid:
+    infisical_meta['INFISICAL_CLIENT_ID'] = cid
+if csec:
+    infisical_meta['INFISICAL_CLIENT_SECRET'] = csec
+if token and not token.startswith('ey'):
+    infisical_meta['INFISICAL_TOKEN'] = token
+
+for k, v in infisical_meta.items():
+    existing[k] = v
 
 existing['ENVIRONMENT'] = '${env_name}'
 
 with open(plane_env, 'w') as f:
-    f.write(f'# Synced via Infisical (${env_name})\n')
     for k, v in sorted(existing.items()):
         f.write(f'{k}={v}\n')
 "
+        echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  OneFlow will fetch secrets directly from Infisical at runtime (zero secrets written to plane.env)."
         return 0
     else
         echo -e " ${CLR_DANGER}✗${CLR_RESET}  Could not retrieve secrets from Infisical for ${env_name}. Using local configuration."

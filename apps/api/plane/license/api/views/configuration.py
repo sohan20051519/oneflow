@@ -235,3 +235,42 @@ class InfisicalConnectionCheckEndpoint(BaseAPIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class InfisicalSyncSecretsEndpoint(BaseAPIView):
+    permission_classes = [InstanceAdminPermission]
+
+    def post(self, request):
+        from plane.license.utils.infisical import sync_secrets_into_runtime, fetch_raw_secrets_from_infisical
+
+        host = request.data.get("host")
+        project_id = request.data.get("project_id")
+        environment = request.data.get("environment")
+        client_id = request.data.get("client_id")
+        client_secret = request.data.get("client_secret")
+        token = request.data.get("token")
+
+        try:
+            secrets = fetch_raw_secrets_from_infisical(
+                host=host,
+                project_id=project_id,
+                environment=environment,
+                client_id=client_id,
+                client_secret=client_secret,
+                token=token,
+            )
+            count = sync_secrets_into_runtime(secrets=secrets)
+            return Response(
+                {
+                    "status": "success",
+                    "count": count,
+                    "message": f"Successfully fetched and synchronized {count} secrets directly from Infisical into runtime without writing to plane.env.",
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to sync secrets directly from Infisical: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+

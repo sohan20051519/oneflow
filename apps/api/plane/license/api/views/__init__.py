@@ -10,6 +10,7 @@ from .configuration import (
     InstanceConfigurationEndpoint,
     DisableEmailFeatureEndpoint,
     InfisicalConnectionCheckEndpoint,
+    InfisicalSyncSecretsEndpoint,
 )
 
 

@@ -25,6 +25,15 @@ class Command(BaseCommand):
             if not os.environ.get(item):
                 raise CommandError(f"{item} env variable is required.")
 
+        # Directly fetch and apply secrets from Infisical if configured (0 file write)
+        try:
+            from plane.license.utils.infisical import sync_secrets_into_runtime
+            count = sync_secrets_into_runtime()
+            if count > 0:
+                self.stdout.write(self.style.SUCCESS(f"Infisical: Synchronized {count} secrets directly into runtime."))
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"Infisical direct sync note: {e}"))
+
         for item in instance_config_variables:
             obj, created = InstanceConfiguration.objects.get_or_create(key=item.get("key"))
             if created:
