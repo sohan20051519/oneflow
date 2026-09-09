@@ -251,8 +251,8 @@ Both **Staging** and **Production** deployments use `./setup.sh` as the single u
 1. **Domain Configuration**: The canonical deployment domain (e.g. `oneflow.cubeone.in` or production domain).
 2. **Environment & Secrets Source**: Provides **3 Options** to supply secrets:
    - **[1] Local `.env` file**: Uses existing local `plane.env` / `.env` on the server.
-   - **[2] Self-Hosted Infisical — Staging**: Dynamically pulls secrets from self-hosted Infisical (`https://config.cubeone.in`) for the `staging` environment.
-   - **[3] Self-Hosted Infisical — Production**: Dynamically pulls secrets from self-hosted Infisical (`https://config.cubeone.in`) for the `production` environment.
+   - **[2] Self-Hosted Infisical — Production**: Dynamically pulls secrets from self-hosted Infisical (`https://config.cubeone.in`) for the `production` (`prod`) environment [Recommended].
+   - **[3] Self-Hosted Infisical — Staging**: Dynamically pulls secrets from self-hosted Infisical (`https://config.cubeone.in`) for the `staging` environment.
 
 ```
 ┌───────────────────────────┬───────────────────────────────────────────────────────────────────┐
@@ -260,7 +260,7 @@ Both **Staging** and **Production** deployments use `./setup.sh` as the single u
 ├───────────────────────────┼───────────────────────────────────────────────────────────────────┤
 │ • Hot-reload Next.js web  │ • Single command: ./setup.sh                                      │
 │ • Local Django API server │ • Prompt 1: Deployment Domain (SSL / Caddy)                       │
-│ • Docker backing infra    │ • Prompt 2: Secret Source (Local .env vs Infisical Staging/Prod)  │
+│ • Docker backing infra    │ • Prompt 2: Secret Source (Local .env vs Infisical Prod/Staging)  │
 │ • http://localhost:3000   │ • Auto-provisions Let's Encrypt HTTPS certificates                │
 │                           │ • Polls database migrations & health readiness                    │
 └───────────────────────────┴───────────────────────────────────────────────────────────────────┘
@@ -327,8 +327,8 @@ cd /home/ubuntu/plane
     │  Select how you want to provide environment variables:     │
     │                                                            │
     │    [1] Local .env file (Use local plane.env / .env)        │
-    │    [2] Self-Hosted Infisical — Staging (config.cubeone.in) │
-    │    [3] Self-Hosted Infisical — Production (config.cubeone) │
+    │    [2] Self-Hosted Infisical — Production (config.cubeone) │
+    │    [3] Self-Hosted Infisical — Staging (config.cubeone.in) │
     ╰────────────────────────────────────────────────────────────╯
 
     Select Option [1/2/3, default: 1]: 
@@ -336,36 +336,54 @@ cd /home/ubuntu/plane
 
 #### How Each Option Works:
 - **Option 1 (Local `.env` file)**: Reads the local `plane.env` file on disk. Ideal for deployments with pre-provisioned environment files.
-- **Option 2 (Self-Hosted Infisical — Staging)**:
-  - Connects to `https://config.cubeone.in`.
+- **Option 2 (Self-Hosted Infisical — Production)** [Recommended]:
+  - Connects to self-hosted Infisical cluster at `https://config.cubeone.in`.
   - Project ID: `f10e0d79-aa86-4c35-862a-e44ed0f482e3` (project: `oneflow`).
-  - Target Environment: `staging`.
+  - Target Environment: `prod` / `production`.
   - Authenticates via **Universal Auth** (Machine Identity Client ID + Client Secret) or **Service Token** (`st.xxx`).
-  - Pulls all staging secrets and writes them to `plane.env`.
-- **Option 3 (Self-Hosted Infisical — Production)**:
+  - Pulls all production secrets and merges them into `plane.env`.
+- **Option 3 (Self-Hosted Infisical — Staging)**:
   - Connects to `https://config.cubeone.in`.
   - Project ID: `f10e0d79-aa86-4c35-862a-e44ed0f482e3`.
-  - Target Environment: `prod` / `production`.
-  - Pulls all production secrets and writes them to `plane.env`.
+  - Target Environment: `staging`.
+  - Pulls staging secrets and writes them to `plane.env`.
 
 #### Non-Interactive / CI/CD Automation Flags:
 You can pass arguments directly to `./setup.sh` to run unattended:
 ```bash
-# Deploy Staging using local .env
+# Deploy using local .env
 ./setup.sh --domain oneflow.cubeone.in --env-source 1 --no-prompt
 
-# Deploy Staging pulling from Infisical with Universal Auth
+# Deploy Production pulling from Infisical with Universal Auth
 ./setup.sh --domain oneflow.cubeone.in --env-source 2 \
   --infisical-client-id "<CLIENT_ID>" --infisical-client-secret "<CLIENT_SECRET>" --no-prompt
 
-# Deploy Production pulling from Infisical with Service Token
-./setup.sh --domain oneflow.yourcompany.com --env-source 3 \
+# Deploy Staging pulling from Infisical with Service Token
+./setup.sh --domain oneflow.cubeone.in --env-source 3 \
   --infisical-token "st.xxxx" --no-prompt
 ```
 
 ---
 
-### 3. Production Hardening & Best Practices
+### 3. God-Mode Administration & Instance Configuration (`/god-mode/`)
+
+OneFlow provides a dedicated system administration console known as **God-Mode** (`/god-mode/`).
+
+#### Available God-Mode Modules:
+1. **General** (`/god-mode/general/`): Instance identification, admin user management, telemetry controls.
+2. **Configurations** (`/god-mode/configuration/`):
+   - **Self-Hosted Infisical Integration**: Direct configuration of Infisical cluster endpoint (`https://config.cubeone.in`), project UUID, environment (`prod`), and Machine Identity credentials.
+   - **Live Connection Testing**: Instant health verification and token validation against the Infisical cluster.
+   - **Platform Infrastructure Readout**: Live status of Direct AWS S3 storage (`oneflow-storage`), Keycloak OIDC SSO, PostgreSQL transactional database, and Valkey/Redis cache.
+3. **Email** (`/god-mode/email/`): SMTP settings, TLS/SSL configuration, and outbound email test tools.
+4. **Workspaces** (`/god-mode/workspace/`): Workspace creation controls, workspace listing, and global member quotas.
+5. **Authentication** (`/god-mode/authentication/`): Enterprise Keycloak / OpenID Connect SSO, GitHub, GitLab, Google, and Gitea auth toggles.
+6. **AI** (`/god-mode/ai/`): LLM model configuration (`gpt-4o-mini`, custom models) and OpenAI credentials.
+7. **Images** (`/god-mode/image/`): Unsplash and external image provider controls.
+
+---
+
+### 4. Production Hardening & Best Practices
 
 When operating OneFlow in Production:
 1. **Automate Daily Database Backups**:

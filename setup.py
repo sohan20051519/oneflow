@@ -1077,10 +1077,10 @@ def main():
         if not cli_env_source and not no_prompt and sys.stdin.isatty():
             print(f"\n {CLR_PRIMARY}{CLR_BOLD}╭─[ ENVIRONMENT & SECRETS CONFIGURATION ]────────────────────╮{CLR_RESET}")
             print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_BOLD}Select how you want to provide environment variables:{CLR_RESET}     {CLR_PRIMARY}│{CLR_RESET}")
-            print(f" {CLR_PRIMARY}│{CLR_RESET}                                                            {CLR_PRIMARY}│{CLR_RESET}")
-            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[1] Local .env file{CLR_RESET} (Use local plane.env / .env)        {CLR_PRIMARY}│{CLR_RESET}")
-            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[2] Self-Hosted Infisical — Staging{CLR_RESET} (config.cubeone.in) {CLR_PRIMARY}│{CLR_RESET}")
-            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[3] Self-Hosted Infisical — Production{CLR_RESET} (config.cubeone) {CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}                                                            ${CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[1] Local .env file${CLR_RESET} (Use local plane.env / .env)        {CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[2] Self-Hosted Infisical — Production${CLR_RESET} (config.cubeone.in) {CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[3] Self-Hosted Infisical — Staging${CLR_RESET} (config.cubeone.in)    {CLR_PRIMARY}│{CLR_RESET}")
             print(f" {CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯{CLR_RESET}\n")
             try:
                 val = input(" Select Option [1/2/3, default: 1]: ").strip()
@@ -1091,10 +1091,10 @@ def main():
         elif not cli_env_source:
             cli_env_source = "1"
 
-        if cli_env_source in ["2", "staging", "Staging"]:
-            fetch_infisical_secrets(deploy_dir, "staging")
-        elif cli_env_source in ["3", "prod", "production", "Production"]:
+        if cli_env_source in ["2", "prod", "production", "Production", "infisical", "Infisical"]:
             fetch_infisical_secrets(deploy_dir, "prod")
+        elif cli_env_source in ["3", "staging", "Staging"]:
+            fetch_infisical_secrets(deploy_dir, "staging")
         else:
             print(f" {CLR_SUCCESS}✓{CLR_RESET}  Using local environment configuration ({os.path.join(deploy_dir, 'plane.env')})")
 

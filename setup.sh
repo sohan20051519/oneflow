@@ -302,7 +302,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  -d, --domain <URL|IP>       Specify deployment domain or IP without prompting"
-            echo "  -e, --env-source <1|2|3>    Environment source: 1=local, 2=infisical-staging, 3=infisical-prod"
+            echo "  -e, --env-source <1|2|3>    Environment source: 1=local, 2=infisical-prod (default), 3=infisical-staging"
             echo "      --infisical-token <st>  Infisical Service Token (st.xxx)"
             echo "      --infisical-client-id <id> Infisical Universal Auth Client ID"
             echo "      --infisical-client-secret <sec> Infisical Universal Auth Client Secret"
@@ -331,7 +331,7 @@ fi
 
 # Infisical Dynamic Secret Manager Integration
 fetch_infisical_secrets() {
-    local env_name="$1"
+    local env_name="${1:-prod}"
     local infisical_host="${INFISICAL_HOST:-https://config.cubeone.in}"
     infisical_host="${infisical_host%/}"
     local project_id="${INFISICAL_PROJECT_ID:-f10e0d79-aa86-4c35-862a-e44ed0f482e3}"
@@ -346,9 +346,9 @@ fetch_infisical_secrets() {
     fi
 
     if [ -z "$auth_token" ] && [ -t 0 ]; then
-        local env_label="STAGING"
-        if [ "$env_name" = "prod" ] || [ "$env_name" = "production" ]; then
-            env_label="PRODUCTION"
+        local env_label="PRODUCTION"
+        if [ "$env_name" = "staging" ] || [ "$env_name" = "stage" ]; then
+            env_label="STAGING"
         fi
         echo ""
         echo -e " ${CLR_PRIMARY}${CLR_BOLD}╭─[ INFISICAL AUTHENTICATION (${env_label}) ]─────────────────╮${CLR_RESET}"
@@ -388,7 +388,7 @@ fetch_infisical_secrets() {
     echo -e " ${CLR_MUTED}Fetching '${env_name}' secrets from Infisical (${infisical_host})...${CLR_RESET}"
     local secrets_json=""
     local count="0"
-    for candidate in "$env_name" "prod" "production"; do
+    for candidate in "$env_name" "prod" "production" "staging" "stage"; do
         secrets_json=$(curl -s -X GET "${infisical_host}/api/v3/secrets/raw?workspaceId=${project_id}&environment=${candidate}&secretPath=/" \
             -H "Authorization: Bearer ${auth_token}" 2>/dev/null)
         count=$(echo "$secrets_json" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('secrets', [])))" 2>/dev/null || echo "0")
@@ -532,8 +532,8 @@ else
     echo -e " ${CLR_PRIMARY}│${CLR_RESET}  ${CLR_BOLD}Select how you want to provide environment variables:${CLR_RESET}     ${CLR_PRIMARY}│${CLR_RESET}"
     echo -e " ${CLR_PRIMARY}│${CLR_RESET}                                                            ${CLR_PRIMARY}│${CLR_RESET}"
     echo -e " ${CLR_PRIMARY}│${CLR_RESET}    ${CLR_CYAN}[1] Local .env file${CLR_RESET} (Use local plane.env / .env)        ${CLR_PRIMARY}│${CLR_RESET}"
-    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    ${CLR_CYAN}[2] Self-Hosted Infisical — Staging${CLR_RESET} (config.cubeone.in) ${CLR_PRIMARY}│${CLR_RESET}"
-    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    ${CLR_CYAN}[3] Self-Hosted Infisical — Production${CLR_RESET} (config.cubeone) ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    ${CLR_CYAN}[2] Self-Hosted Infisical — Production${CLR_RESET} (config.cubeone.in) ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    ${CLR_CYAN}[3] Self-Hosted Infisical — Staging${CLR_RESET} (config.cubeone.in)    ${CLR_PRIMARY}│${CLR_RESET}"
     echo -e " ${CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯${CLR_RESET}"
     echo ""
     read -r -p " Select Option [1/2/3, default: 1]: " USER_ENV_CHOICE
@@ -541,11 +541,11 @@ else
 fi
 
 case "$ENV_CHOICE" in
-    2|*staging*|*Staging*)
-        fetch_infisical_secrets "staging"
-        ;;
-    3|*prod*|*Production*)
+    2|*prod*|*Production*|*infisical*|*Infisical*)
         fetch_infisical_secrets "prod"
+        ;;
+    3|*staging*|*Staging*)
+        fetch_infisical_secrets "staging"
         ;;
     1|*)
         echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  Using local environment configuration (${DEPLOY_DIR}/plane.env)"

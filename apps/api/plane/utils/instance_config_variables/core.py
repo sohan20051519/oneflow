@@ -307,6 +307,45 @@ oidc_config_variables = [
     },
 ]
 
+infisical_config_variables = [
+    {
+        "key": "INFISICAL_HOST",
+        "value": os.environ.get("INFISICAL_HOST", "https://config.cubeone.in"),
+        "category": "INFISICAL",
+        "is_encrypted": False,
+    },
+    {
+        "key": "INFISICAL_PROJECT_ID",
+        "value": os.environ.get("INFISICAL_PROJECT_ID", "f10e0d79-aa86-4c35-862a-e44ed0f482e3"),
+        "category": "INFISICAL",
+        "is_encrypted": False,
+    },
+    {
+        "key": "INFISICAL_ENV",
+        "value": os.environ.get("INFISICAL_ENV", "prod"),
+        "category": "INFISICAL",
+        "is_encrypted": False,
+    },
+    {
+        "key": "INFISICAL_CLIENT_ID",
+        "value": os.environ.get("INFISICAL_CLIENT_ID", ""),
+        "category": "INFISICAL",
+        "is_encrypted": False,
+    },
+    {
+        "key": "INFISICAL_CLIENT_SECRET",
+        "value": os.environ.get("INFISICAL_CLIENT_SECRET", ""),
+        "category": "INFISICAL",
+        "is_encrypted": True,
+    },
+    {
+        "key": "INFISICAL_TOKEN",
+        "value": os.environ.get("INFISICAL_TOKEN", ""),
+        "category": "INFISICAL",
+        "is_encrypted": True,
+    },
+]
+
 core_config_variables = [
     *authentication_config_variables,
     *workspace_management_config_variables,
@@ -318,5 +357,6 @@ core_config_variables = [
     *smtp_config_variables,
     *llm_config_variables,
     *unsplash_config_variables,
+    *infisical_config_variables,
 ]
 

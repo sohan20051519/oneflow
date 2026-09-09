@@ -41,21 +41,40 @@ class InstanceConfigurationEndpoint(BaseAPIView):
     @invalidate_cache(path="/api/instances/configurations/", user=False)
     @invalidate_cache(path="/api/instances/", user=False)
     def patch(self, request):
-        configurations = InstanceConfiguration.objects.filter(key__in=request.data.keys())
+        existing_configurations = {c.key: c for c in InstanceConfiguration.objects.filter(key__in=request.data.keys())}
 
-        bulk_configurations = []
-        for configuration in configurations:
-            raw_value = request.data.get(configuration.key, configuration.value)
+        bulk_update = []
+        bulk_create = []
+        result_configurations = []
+
+        for key, raw_value in request.data.items():
             value = "" if raw_value is None else str(raw_value).strip()
-            if configuration.is_encrypted:
-                configuration.value = encrypt_data(value)
+            is_secret = any(term in key.lower() for term in ["secret", "token", "password"])
+
+            if key in existing_configurations:
+                configuration = existing_configurations[key]
+                if configuration.is_encrypted:
+                    configuration.value = encrypt_data(value)
+                else:
+                    configuration.value = value
+                bulk_update.append(configuration)
+                result_configurations.append(configuration)
             else:
-                configuration.value = value
-            bulk_configurations.append(configuration)
+                new_conf = InstanceConfiguration(
+                    key=key,
+                    value=encrypt_data(value) if is_secret else value,
+                    category="INFISICAL" if "INFISICAL" in key else "CUSTOM",
+                    is_encrypted=is_secret,
+                )
+                bulk_create.append(new_conf)
+                result_configurations.append(new_conf)
 
-        InstanceConfiguration.objects.bulk_update(bulk_configurations, ["value"], batch_size=100)
+        if bulk_update:
+            InstanceConfiguration.objects.bulk_update(bulk_update, ["value"], batch_size=100)
+        if bulk_create:
+            InstanceConfiguration.objects.bulk_create(bulk_create, batch_size=100)
 
-        serializer = InstanceConfigurationSerializer(configurations, many=True)
+        serializer = InstanceConfigurationSerializer(result_configurations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -169,3 +188,50 @@ class EmailCredentialCheckEndpoint(BaseAPIView):
                 {"error": "Could not send email. Please check your configuration"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class InfisicalConnectionCheckEndpoint(BaseAPIView):
+    permission_classes = [InstanceAdminPermission]
+
+    def post(self, request):
+        import urllib.request
+        import json
+
+        host = (request.data.get("host") or "https://config.cubeone.in").rstrip("/")
+        project_id = request.data.get("project_id") or "f10e0d79-aa86-4c35-862a-e44ed0f482e3"
+        environment = request.data.get("environment") or "prod"
+        client_id = request.data.get("client_id")
+        client_secret = request.data.get("client_secret")
+        token = request.data.get("token")
+
+        try:
+            req = urllib.request.Request(f"{host}/api/v1/health", headers={"User-Agent": "OneFlow/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                pass
+        except Exception as e:
+            return Response(
+                {"error": f"Cannot connect to Infisical host at {host}: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if client_id and client_secret:
+            try:
+                login_url = f"{host}/api/v1/auth/universal-auth/login"
+                payload = json.dumps({"clientId": client_id, "clientSecret": client_secret}).encode("utf-8")
+                req = urllib.request.Request(login_url, data=payload, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    token = data.get("accessToken")
+            except Exception as e:
+                return Response(
+                    {"error": f"Infisical Universal Auth failed: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        return Response(
+            {
+                "status": "success",
+                "message": f"Successfully connected to Self-Hosted Infisical ({host}) targeting Production ({environment}).",
+            },
+            status=status.HTTP_200_OK,
+        )
