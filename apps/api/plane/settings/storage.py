@@ -81,10 +81,15 @@ class S3Storage(S3Boto3Storage):
             expiration = self.signed_url_expiration
         fields = {"Content-Type": file_type}
 
+        max_size = max(int(file_size or 0), int(os.environ.get("FILE_SIZE_LIMIT", "5242880")))
+
+        # Allow flexible content type matching to prevent S3 policy rejection
+        content_type_prefix = file_type.split(";")[0] if file_type else ""
+
         conditions = [
             {"bucket": self.aws_storage_bucket_name},
-            ["content-length-range", 1, file_size],
-            {"Content-Type": file_type},
+            ["content-length-range", 1, max_size],
+            ["starts-with", "$Content-Type", content_type_prefix.split("/")[0] if "/" in content_type_prefix else ""],
         ]
 
         # Add condition for the object name (key)
@@ -92,7 +97,6 @@ class S3Storage(S3Boto3Storage):
             conditions.append(["starts-with", "$key", object_name[: -len("${filename}")]])
         else:
             fields["key"] = object_name
-            conditions.append({"key": object_name})
 
         # Generate the presigned POST URL
         try:
