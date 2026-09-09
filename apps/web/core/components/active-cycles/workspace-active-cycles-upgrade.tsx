@@ -4,131 +4,138 @@
  * See the LICENSE file for details.
  */
 
+import { useEffect, useState } from "react";
 import { observer } from "mobx-react";
-import { AlertOctagon, BarChart4, CircleDashed, Folder, Microscope } from "lucide-react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 // plane imports
-import { MARKETING_PRICING_PAGE_LINK } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
-import { getButtonStyling } from "@plane/propel/button";
-import { SearchIcon } from "@plane/propel/icons";
 import { ContentWrapper } from "@plane/ui";
-import { cn } from "@plane/utils";
-// assets
-import ctaL1Dark from "@/app/assets/workspace-active-cycles/cta-l-1-dark.webp?url";
-import ctaL1Light from "@/app/assets/workspace-active-cycles/cta-l-1-light.webp?url";
-import ctaR1Dark from "@/app/assets/workspace-active-cycles/cta-r-1-dark.webp?url";
-import ctaR1Light from "@/app/assets/workspace-active-cycles/cta-r-1-light.webp?url";
-import ctaR2Dark from "@/app/assets/workspace-active-cycles/cta-r-2-dark.webp?url";
-import ctaR2Light from "@/app/assets/workspace-active-cycles/cta-r-2-light.webp?url";
-// components
-import { ProIcon } from "@/components/common/pro-icon";
+import { CircularProgressIndicator } from "@plane/ui";
+import { calculateCycleProgress } from "@plane/utils";
+import type { ICycle } from "@plane/types";
 // hooks
-import { useUser } from "@/hooks/store/user";
+import { useCycle } from "@/hooks/store/use-cycle";
+import { useProject } from "@/hooks/store/use-project";
 
-export const WORKSPACE_ACTIVE_CYCLES_DETAILS = [
-  {
-    key: "10000_feet_view",
-    title: "10,000-feet view of all active cycles.",
-    description:
-      "Zoom out to see running cycles across all your projects at once instead of going from Cycle to Cycle in each project.",
-    icon: Folder,
-  },
-  {
-    key: "get_snapshot_of_each_active_cycle",
-    title: "Get a snapshot of each active cycle.",
-    description:
-      "Track high-level metrics for all active cycles, see their state of progress, and get a sense of scope against deadlines.",
-    icon: CircleDashed,
-  },
-  {
-    key: "compare_burndowns",
-    title: "Compare burndowns.",
-    description: "Monitor how each of your teams are performing with a peek into each cycle’s burndown report.",
-    icon: BarChart4,
-  },
-  {
-    key: "quickly_see_make_or_break_issues",
-    title: "Quickly see make-or-break work items. ",
-    description:
-      "Preview high-priority work items for each cycle against due dates. See all of them per cycle in one click.",
-    icon: AlertOctagon,
-  },
-  {
-    key: "zoom_into_cycles_that_need_attention",
-    title: "Zoom into cycles that need attention. ",
-    description: "Investigate the state of any cycle that doesn’t conform to expectations in one click.",
-    icon: SearchIcon,
-  },
-  {
-    key: "stay_ahead_of_blockers",
-    title: "Stay ahead of blockers.",
-    description:
-      "Spot challenges from one project to another and see inter-cycle dependencies that aren’t obvious from any other view.",
-    icon: Microscope,
-  },
-];
+type TActiveCycleCard = {
+  cycle: ICycle;
+  workspaceSlug: string;
+};
 
-export const WorkspaceActiveCyclesUpgrade = observer(function WorkspaceActiveCyclesUpgrade() {
-  const { t } = useTranslation();
-  // store hooks
-  const {
-    userProfile: { data: userProfile },
-  } = useUser();
+const ActiveCycleCard = observer(function ActiveCycleCard({ cycle, workspaceSlug }: TActiveCycleCard) {
+  const { getProjectById } = useProject();
+  const project = cycle.project_id ? getProjectById(cycle.project_id) : undefined;
 
-  const isDarkMode = userProfile?.theme.theme === "dark";
+  const totalIssues = cycle.total_issues ?? 0;
+  const completedIssues = cycle.completed_issues ?? 0;
+  const progress = calculateCycleProgress(completedIssues, totalIssues);
+
+  const progressColor = progress >= 66 ? "#22c55e" : progress >= 33 ? "#f59e0b" : "#ef4444";
 
   return (
-    <ContentWrapper className="gap-10">
-      <div
-        className={cn("item-center flex min-h-[25rem] justify-between rounded-xl", {
-          "bg-gradient-to-l from-[#CFCFCF] to-[#212121]": userProfile?.theme.theme === "dark",
-          "bg-gradient-to-l from-[#3b5ec6] to-[#f5f7fe]": userProfile?.theme.theme === "light",
-        })}
-      >
-        <div className="relative flex flex-col justify-center gap-7 px-14 lg:w-1/2">
-          <div className="flex max-w-64 flex-col gap-2">
-            <h2 className="text-20 font-semibold">{t("on_demand_snapshots_of_all_your_cycles")}</h2>
-            <p className="text-14 font-medium text-tertiary">{t("active_cycles_description")}</p>
+    <Link
+      href={`/${workspaceSlug}/projects/${cycle.project_id}/cycles/${cycle.id}`}
+      className="flex flex-col gap-3 rounded-lg border border-subtle bg-surface-1 p-4 hover:bg-surface-2 transition-colors"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-primary truncate">{cycle.name}</p>
+          {project && (
+            <p className="text-xs text-tertiary mt-0.5 truncate">{project.name}</p>
+          )}
+        </div>
+        <div className="flex-shrink-0">
+          <CircularProgressIndicator
+            size={36}
+            percentage={progress}
+            strokeColor={progressColor}
+          >
+            <span className="text-[9px] font-medium" style={{ color: progressColor }}>
+              {progress}%
+            </span>
+          </CircularProgressIndicator>
+        </div>
+      </div>
+      <div className="flex items-center justify-between text-xs text-tertiary">
+        <span>
+          {completedIssues}/{totalIssues} issues complete
+        </span>
+        {cycle.end_date && (
+          <span>
+            Ends {new Date(cycle.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          </span>
+        )}
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-surface-3 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${progress}%`, backgroundColor: progressColor }}
+        />
+      </div>
+    </Link>
+  );
+});
+
+export const WorkspaceActiveCyclesUpgrade = observer(function WorkspaceActiveCyclesUpgrade() {
+  const { workspaceSlug } = useParams();
+  const { t } = useTranslation();
+  // store hooks
+  const { fetchWorkspaceCycles, cycleMap } = useCycle();
+  // local state
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!workspaceSlug) return;
+    setIsLoading(true);
+    fetchWorkspaceCycles(workspaceSlug.toString()).finally(() => setIsLoading(false));
+  }, [workspaceSlug, fetchWorkspaceCycles]);
+
+  // Get all active (current status) cycles across the workspace
+  const activeCycles = Object.values(cycleMap ?? {}).filter(
+    (cycle) => cycle.status?.toLowerCase() === "current" && !cycle.archived_at
+  );
+
+  return (
+    <ContentWrapper>
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold text-primary">{t("active_cycles")}</h1>
+        <p className="text-sm text-tertiary mt-1">
+          All currently active cycles across your workspace projects.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-primary border-t-transparent" />
+            <span className="text-sm text-tertiary">Loading active cycles…</span>
           </div>
-          <div className="flex items-center gap-3">
-            <a
-              className={`${getButtonStyling("primary", "base")} cursor-pointer`}
-              href={MARKETING_PRICING_PAGE_LINK}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ProIcon className="h-3.5 w-3.5 text-on-color" />
-              {t("upgrade")}
-            </a>
+        </div>
+      ) : activeCycles.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <div className="h-16 w-16 rounded-full bg-surface-2 flex items-center justify-center">
+            <svg className="h-8 w-8 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
+            </svg>
           </div>
-          <span className="absolute top-0 left-0">
-            <img
-              src={isDarkMode ? ctaL1Dark : ctaL1Light}
-              className="h-[125px] w-[125px] rounded-xl object-contain"
-              alt="l-1"
+          <p className="text-base font-medium text-secondary">No active cycles</p>
+          <p className="text-sm text-tertiary text-center max-w-xs">
+            None of your projects have an active cycle running right now. Start a cycle in any project to see it here.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {activeCycles.map((cycle) => (
+            <ActiveCycleCard
+              key={cycle.id}
+              cycle={cycle}
+              workspaceSlug={workspaceSlug?.toString() ?? ""}
             />
-          </span>
+          ))}
         </div>
-        <div className="relative hidden w-1/2 lg:block">
-          <span className="absolute right-0 bottom-0">
-            <img src={isDarkMode ? ctaR1Dark : ctaR1Light} className="h-full w-full object-contain" alt="r-1" />
-          </span>
-          <span className="absolute right-1/2 -bottom-16 rounded-xl">
-            <img src={isDarkMode ? ctaR2Dark : ctaR2Light} className="h-full w-full object-contain" alt="r-2" />
-          </span>
-        </div>
-      </div>
-      <div className="grid h-full grid-cols-1 gap-5 pb-8 lg:grid-cols-2 xl:grid-cols-3">
-        {WORKSPACE_ACTIVE_CYCLES_DETAILS.map((item) => (
-          <div key={item.title} className="flex min-h-32 w-full flex-col gap-2 rounded-md bg-layer-1 p-4">
-            <div className="flex justify-between gap-2">
-              <h3 className="font-medium">{t(item.key)}</h3>
-              <item.icon className="text-blue-500 mt-1 h-4 w-4" />
-            </div>
-            <span className="text-13 text-tertiary">{t(`${item.key}_description`)}</span>
-          </div>
-        ))}
-      </div>
+      )}
     </ContentWrapper>
   );
 });
