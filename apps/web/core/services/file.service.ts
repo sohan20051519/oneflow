@@ -269,16 +269,8 @@ export class FileService extends APIService {
     this.cancelSource.cancel("Upload canceled");
   }
 
-  async getUnsplashImages(query?: string): Promise<UnSplashImage[]> {
-    return this.get(`/api/unsplash/`, {
-      params: {
-        query,
-      },
-    })
-      .then((res) => res?.data?.results ?? res?.data)
-      .catch((err) => {
-        throw err?.response?.data;
-      });
+  async getUnsplashImages(_query?: string): Promise<UnSplashImage[]> {
+    return [];
   }
 
   async duplicateAsset(

@@ -159,7 +159,7 @@ class InstanceEndpoint(BaseAPIView):
         data["posthog_host"] = POSTHOG_HOST
 
         # Unsplash
-        data["has_unsplash_configured"] = bool(UNSPLASH_ACCESS_KEY)
+        data["has_unsplash_configured"] = False
 
         # Open AI settings
         data["has_llm_configured"] = bool(LLM_API_KEY)
