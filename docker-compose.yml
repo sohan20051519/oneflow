@@ -245,3 +245,4 @@ services:
       - api
       - space
       - admin
+      - live

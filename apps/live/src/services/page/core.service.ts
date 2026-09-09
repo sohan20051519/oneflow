@@ -48,10 +48,22 @@ export abstract class PageCoreService extends APIService {
         responseType: "arraybuffer",
       });
       const data = response?.data;
-      if (!Buffer.isBuffer(data)) {
-        throw new Error("Expected response to be a Buffer");
+      if (Buffer.isBuffer(data)) {
+        return data;
       }
-      return data;
+      if (data instanceof ArrayBuffer) {
+        return Buffer.from(data);
+      }
+      if (ArrayBuffer.isView(data)) {
+        return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+      }
+      if (typeof data === "string") {
+        return Buffer.from(data);
+      }
+      if (!data) {
+        return Buffer.alloc(0);
+      }
+      throw new Error("Expected response to be a Buffer or ArrayBuffer");
     } catch (error) {
       const appError = new AppError(error, {
         context: { operation: "fetchDescriptionBinary", pageId },
