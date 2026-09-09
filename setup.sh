@@ -263,6 +263,26 @@ while [[ $# -gt 0 ]]; do
             CLI_DOMAIN="${1#*=}"
             shift
             ;;
+        --env-source|-e)
+            CLI_ENV_SOURCE="$2"
+            shift 2
+            ;;
+        --env-source=*)
+            CLI_ENV_SOURCE="${1#*=}"
+            shift
+            ;;
+        --infisical-token=*)
+            INFISICAL_TOKEN="${1#*=}"
+            shift
+            ;;
+        --infisical-client-id=*)
+            INFISICAL_CLIENT_ID="${1#*=}"
+            shift
+            ;;
+        --infisical-client-secret=*)
+            INFISICAL_CLIENT_SECRET="${1#*=}"
+            shift
+            ;;
         --tui)
             USE_TUI=true
             shift
@@ -281,11 +301,15 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: ./setup.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  -d, --domain <URL|IP>   Specify deployment domain or IP without prompting"
-            echo "      --tui               Launch dual-pane interactive Python TUI (default in interactive terminal)"
-            echo "      --no-tui            Run in standard linear terminal mode"
-            echo "      --no-prompt         Use existing/detected domain without interactive prompt"
-            echo "  -h, --help              Show this help message"
+            echo "  -d, --domain <URL|IP>       Specify deployment domain or IP without prompting"
+            echo "  -e, --env-source <1|2|3>    Environment source: 1=local, 2=infisical-staging, 3=infisical-prod"
+            echo "      --infisical-token <st>  Infisical Service Token (st.xxx)"
+            echo "      --infisical-client-id <id> Infisical Universal Auth Client ID"
+            echo "      --infisical-client-secret <sec> Infisical Universal Auth Client Secret"
+            echo "      --tui                   Launch dual-pane interactive Python TUI"
+            echo "      --no-tui                Run in standard linear terminal mode"
+            echo "      --no-prompt             Use existing/detected domain without interactive prompt"
+            echo "  -h, --help                  Show this help message"
             echo ""
             exit 0
             ;;
@@ -304,6 +328,113 @@ fi
 if [ -t 1 ]; then
     clear
 fi
+
+# Infisical Dynamic Secret Manager Integration
+fetch_infisical_secrets() {
+    local env_name="$1"
+    local infisical_host="${INFISICAL_HOST:-https://config.cubeone.in}"
+    infisical_host="${infisical_host%/}"
+    local project_id="${INFISICAL_PROJECT_ID:-f10e0d79-aa86-4c35-862a-e44ed0f482e3}"
+    local auth_token="${INFISICAL_TOKEN:-}"
+
+    if [ -z "$auth_token" ] && [ -n "$INFISICAL_CLIENT_ID" ] && [ -n "$INFISICAL_CLIENT_SECRET" ]; then
+        local login_resp
+        login_resp=$(curl -s -X POST "${infisical_host}/api/v1/auth/universal-auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"clientId\":\"${INFISICAL_CLIENT_ID}\",\"clientSecret\":\"${INFISICAL_CLIENT_SECRET}\"}" 2>/dev/null)
+        auth_token=$(echo "$login_resp" | python3 -c "import sys, json; print(json.load(sys.stdin).get('accessToken', ''))" 2>/dev/null || true)
+    fi
+
+    if [ -z "$auth_token" ] && [ -t 0 ]; then
+        local env_label="STAGING"
+        if [ "$env_name" = "prod" ] || [ "$env_name" = "production" ]; then
+            env_label="PRODUCTION"
+        fi
+        echo ""
+        echo -e " ${CLR_PRIMARY}${CLR_BOLD}╭─[ INFISICAL AUTHENTICATION (${env_label}) ]─────────────────╮${CLR_RESET}"
+        echo -e " ${CLR_PRIMARY}│${CLR_RESET}  Infisical Host: ${CLR_CYAN}${infisical_host}${CLR_RESET}"
+        echo -e " ${CLR_PRIMARY}│${CLR_RESET}  Project ID:     ${CLR_MUTED}${project_id}${CLR_RESET}"
+        echo -e " ${CLR_PRIMARY}│${CLR_RESET}  Target Env:     ${CLR_PRIMARY}${env_name}${CLR_RESET}"
+        echo -e " ${CLR_PRIMARY}│${CLR_RESET}"
+        echo -e " ${CLR_PRIMARY}│${CLR_RESET}  Choose Auth Method:"
+        echo -e " ${CLR_PRIMARY}│${CLR_RESET}    [1] Universal Auth (Client ID + Client Secret)"
+        echo -e " ${CLR_PRIMARY}│${CLR_RESET}    [2] Service Token (st.xxx)"
+        echo -e " ${CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯${CLR_RESET}"
+        echo ""
+        read -r -p " Select Auth Method [1/2, default: 1]: " AUTH_M
+        AUTH_M="${AUTH_M:-1}"
+        if [ "$AUTH_M" = "2" ]; then
+            read -r -s -p " Enter Infisical Service Token: " auth_token
+            echo ""
+        else
+            read -r -p " Enter Infisical Client ID: " CID
+            read -r -s -p " Enter Infisical Client Secret: " CSEC
+            echo ""
+            if [ -n "$CID" ] && [ -n "$CSEC" ]; then
+                local login_resp
+                login_resp=$(curl -s -X POST "${infisical_host}/api/v1/auth/universal-auth/login" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"clientId\":\"${CID}\",\"clientSecret\":\"${CSEC}\"}" 2>/dev/null)
+                auth_token=$(echo "$login_resp" | python3 -c "import sys, json; print(json.load(sys.stdin).get('accessToken', ''))" 2>/dev/null || true)
+            fi
+        fi
+    fi
+
+    if [ -z "$auth_token" ]; then
+        echo -e " ${CLR_WARNING}▲${CLR_RESET}  No Infisical credentials provided; using local configuration."
+        return 1
+    fi
+
+    echo -e " ${CLR_MUTED}Fetching '${env_name}' secrets from Infisical (${infisical_host})...${CLR_RESET}"
+    local secrets_json=""
+    local count="0"
+    for candidate in "$env_name" "prod" "production"; do
+        secrets_json=$(curl -s -X GET "${infisical_host}/api/v3/secrets/raw?workspaceId=${project_id}&environment=${candidate}&secretPath=/" \
+            -H "Authorization: Bearer ${auth_token}" 2>/dev/null)
+        count=$(echo "$secrets_json" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('secrets', [])))" 2>/dev/null || echo "0")
+        if [ "$count" -gt 0 ]; then
+            break
+        fi
+    done
+
+    if [ "$count" -gt 0 ]; then
+        echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  Successfully retrieved ${CLR_BOLD}${count}${CLR_RESET} secrets from Infisical (${env_name})"
+        echo "$secrets_json" | python3 -c "
+import sys, json, os
+
+deploy_dir = '${DEPLOY_DIR}'
+plane_env = os.path.join(deploy_dir, 'plane.env')
+data = json.load(sys.stdin)
+secrets = data.get('secrets', [])
+
+existing = {}
+if os.path.isfile(plane_env):
+    with open(plane_env, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                k, v = line.split('=', 1)
+                existing[k.strip()] = v.strip()
+
+for s in secrets:
+    k = s.get('secretKey')
+    v = s.get('secretValue', '')
+    if k:
+        existing[k] = v
+
+existing['ENVIRONMENT'] = '${env_name}'
+
+with open(plane_env, 'w') as f:
+    f.write(f'# Synced via Infisical (${env_name})\n')
+    for k, v in sorted(existing.items()):
+        f.write(f'{k}={v}\n')
+"
+        return 0
+    else
+        echo -e " ${CLR_DANGER}✗${CLR_RESET}  Could not retrieve secrets from Infisical for ${env_name}. Using local configuration."
+        return 1
+    fi
+}
 
 # ==============================================================================
 # Banner Display
@@ -386,6 +517,40 @@ export APP_DOMAIN="${FINAL_HOST}"
 export WEB_URL="${FINAL_ORIGIN}"
 export APP_PROTOCOL="${FINAL_SCHEME}"
 export ONEFLOW_DOMAIN_CONFIGURED=1
+
+# ------------------------------------------------------------------------------
+# Environment & Secrets Source Configuration (3 Options)
+# ------------------------------------------------------------------------------
+ENV_CHOICE=""
+if [ -n "$CLI_ENV_SOURCE" ]; then
+    ENV_CHOICE="$CLI_ENV_SOURCE"
+elif [ "$NO_PROMPT" = true ] || [ ! -t 0 ]; then
+    ENV_CHOICE="1"
+else
+    echo ""
+    echo -e " ${CLR_PRIMARY}${CLR_BOLD}╭─[ ENVIRONMENT & SECRETS CONFIGURATION ]────────────────────╮${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}  ${CLR_BOLD}Select how you want to provide environment variables:${CLR_RESET}     ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}                                                            ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    ${CLR_CYAN}[1] Local .env file${CLR_RESET} (Use local plane.env / .env)        ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    ${CLR_CYAN}[2] Self-Hosted Infisical — Staging${CLR_RESET} (config.cubeone.in) ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    ${CLR_CYAN}[3] Self-Hosted Infisical — Production${CLR_RESET} (config.cubeone) ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯${CLR_RESET}"
+    echo ""
+    read -r -p " Select Option [1/2/3, default: 1]: " USER_ENV_CHOICE
+    ENV_CHOICE="${USER_ENV_CHOICE:-1}"
+fi
+
+case "$ENV_CHOICE" in
+    2|*staging*|*Staging*)
+        fetch_infisical_secrets "staging"
+        ;;
+    3|*prod*|*Production*)
+        fetch_infisical_secrets "prod"
+        ;;
+    1|*)
+        echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  Using local environment configuration (${DEPLOY_DIR}/plane.env)"
+        ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Comprehensive domain sync — updates EVERY domain-dependent variable across
@@ -808,23 +973,40 @@ fi
 APP_READY=false
 HTTP_STATUS="000"
 API_STATUS="000"
+INTERNAL_API="000"
 
 if [ "$MIGRATOR_OK" = true ]; then
-    RETRIES=30
+    RETRIES=60
     WAIT_SECONDS=3
     for i in $(seq 1 $RETRIES); do
         API_RUNNING=$(${DOCKER_CMD} inspect --format='{{.State.Status}}' api 2>/dev/null || echo "missing")
         if [ "$API_RUNNING" = "running" ]; then
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:80/" 2>/dev/null || echo "000")
-            API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:80/api/instances/" 2>/dev/null || echo "000")
+            # 1. Probe direct internal API endpoint inside container
+            INTERNAL_API=$(${DOCKER_CMD} exec api python3 -c "import urllib.request; resp=urllib.request.urlopen('http://127.0.0.1:8000/api/instances/', timeout=3); print(resp.getcode())" 2>/dev/null || echo "000")
 
-            if [ "$HTTP_STATUS" = "200" ] && [ "$API_STATUS" = "200" ]; then
+            # 2. Probe Gateway with Host header
+            HTTP_STATUS=$(curl -s -k -o /dev/null -w "%{http_code}" --max-time 5 -H "Host: ${FINAL_HOST}" "http://127.0.0.1:80/" 2>/dev/null || echo "000")
+            API_STATUS=$(curl -s -k -o /dev/null -w "%{http_code}" --max-time 5 -H "Host: ${FINAL_HOST}" "http://127.0.0.1:80/api/instances/" 2>/dev/null || echo "000")
+
+            GATEWAY_OK=false
+            if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "301" ] || [ "$HTTP_STATUS" = "302" ] || [ "$HTTP_STATUS" = "308" ]; then
+                GATEWAY_OK=true
+            fi
+
+            API_OK=false
+            if [ "$API_STATUS" = "200" ] || [ "$INTERNAL_API" = "200" ]; then
+                API_OK=true
+            fi
+
+            if [ "$GATEWAY_OK" = true ] && [ "$API_OK" = true ]; then
                 APP_READY=true
                 break
             fi
+            echo -ne " \033[38;2;163;163;163m│  Awaiting backend initialization ($i/$RETRIES)... Gateway: ${HTTP_STATUS}, Internal API: ${INTERNAL_API}\r\033[0m"
         fi
         sleep $WAIT_SECONDS
     done
+    echo ""
 
     # --- Phase 3: Verify no critical containers are in restart loops ---
     RESTART_ISSUES=false

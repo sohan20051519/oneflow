@@ -245,46 +245,47 @@ CONTAINER ID   IMAGE                     COMMAND                  STATUS
 
 ---
 
-## 🌍 Multi-Environment Deployment Guide
+## 🌍 Unified Multi-Environment Deployment Guide (`setup.sh`)
 
-OneFlow supports three distinct operating tiers:
+Both **Staging** and **Production** deployments use `./setup.sh` as the single unified entry point. When executed, the script prompts for:
+1. **Domain Configuration**: The canonical deployment domain (e.g. `oneflow.cubeone.in` or production domain).
+2. **Environment & Secrets Source**: Provides **3 Options** to supply secrets:
+   - **[1] Local `.env` file**: Uses existing local `plane.env` / `.env` on the server.
+   - **[2] Self-Hosted Infisical — Staging**: Dynamically pulls secrets from self-hosted Infisical (`https://config.cubeone.in`) for the `staging` environment.
+   - **[3] Self-Hosted Infisical — Production**: Dynamically pulls secrets from self-hosted Infisical (`https://config.cubeone.in`) for the `production` environment.
 
 ```
-┌───────────────────────────┬───────────────────────────┬───────────────────────────┐
-│     1. Local Dev          │     2. Staging            │     3. Production         │
-├───────────────────────────┼───────────────────────────┼───────────────────────────┤
-│ • Hot-reload frontend     │ • Automated ./setup.sh    │ • Multi-worker scaling    │
-│ • Local Python backend    │ • Staging AWS S3 bucket   │ • Production S3 bucket    │
-│ • Docker local infra      │ • Keycloak staging SSO    │ • Production Keycloak SSO │
-│ • http://localhost:3000   │ • https://oneflow.cubeone │ • SSL + DB Backup Cron    │
-└───────────────────────────┴───────────────────────────┴───────────────────────────┘
+┌───────────────────────────┬───────────────────────────────────────────────────────────────────┐
+│     1. Local Dev          │               2. Staging & Production (via setup.sh)              │
+├───────────────────────────┼───────────────────────────────────────────────────────────────────┤
+│ • Hot-reload Next.js web  │ • Single command: ./setup.sh                                      │
+│ • Local Django API server │ • Prompt 1: Deployment Domain (SSL / Caddy)                       │
+│ • Docker backing infra    │ • Prompt 2: Secret Source (Local .env vs Infisical Staging/Prod)  │
+│ • http://localhost:3000   │ • Auto-provisions Let's Encrypt HTTPS certificates                │
+│                           │ • Polls database migrations & health readiness                    │
+└───────────────────────────┴───────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 1. Local Development Setup
+### 1. Local Development Setup (Workstation)
 
-For engineers developing and debugging frontend components or backend APIs locally on their workstation:
+For engineers developing and debugging frontend components or backend APIs locally:
 
 #### Step 1: Start Infrastructure Containers
-Run the minimal backing infrastructure (PostgreSQL, Valkey/Redis) using `docker-compose-local.yml`:
+Run minimal backing services (PostgreSQL, Valkey/Redis) using `docker-compose-local.yml`:
 ```bash
 cd /home/ubuntu/plane/source
 docker compose -f docker-compose-local.yml up -d plane-db plane-redis
 ```
 
 #### Step 2: Run Backend API
-Create a Python virtual environment, install requirements, and start the Django dev server with hot reload:
+Create a Python virtual environment and run the dev server:
 ```bash
 cd /home/ubuntu/plane/source/apps/api
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# Run migrations
 python manage.py migrate
-
-# Start development API server
 python manage.py runserver 0.0.0.0:8000
 ```
 
@@ -295,120 +296,90 @@ cd /home/ubuntu/plane/source
 pnpm install
 pnpm --filter @plane/web dev
 ```
-Open `http://localhost:3000` in your browser. Any code changes made to React components or Django endpoints will hot-reload instantly.
+Access at `http://localhost:3000`. Changes to TypeScript and Python files will hot-reload immediately.
 
 ---
 
-### 2. Staging Deployment (Current Live Setup)
+### 2. Staging & Production Server Deployments
 
-The staging environment runs on the host server under `https://oneflow.cubeone.in` using direct AWS S3 storage (`oneflow-staging-uploads`) and Keycloak OIDC authentication.
-
-#### Deployment Procedure:
-1. Ensure your domain or IP is set in `plane.env` (or pass it directly to `setup.sh`):
-   ```bash
-   cd /home/ubuntu/plane
-   ./setup.sh --domain oneflow.cubeone.in --no-tui
-   ```
-2. What `setup.sh` orchestrates automatically:
-   - Configures all 7 environment files.
-   - Synchronizes domain and CORS whitelist (`https://oneflow.cubeone.in`).
-   - Builds custom images (`plane-web`, `plane-admin`, `plane-space`, `oneflow-api`, `oneflow-worker`, `oneflow-migrator`, `plane-live`).
-   - Launches containers with `docker compose -f source/docker-compose.yml --env-file plane.env up -d`.
-   - Polls `plane-migrator` until migrations exit with code 0.
-   - Verifies HTTP 200/302 responses across the gateway.
-
-#### Current Staging Architecture:
-- **Canonical Domain**: `https://oneflow.cubeone.in`
-- **Object Storage**: AWS S3 Bucket `oneflow-staging-uploads` (Region: `ap-south-1`)
-- **Authentication**: Keycloak SSO at `https://stgsso.cubeone.in/realms/fstech`
-- **Reverse Proxy**: Caddy with automated Let's Encrypt HTTPS certificates
-
----
-
-### 3. Production Deployment Best Practices
-
-When promoting OneFlow from Staging to Production, follow these production hardening rules:
-
-#### Step 1: Configure Production Environment Variables
-Update `plane.env` (or `source/.env.production`):
-```ini
-# Production Environment Identity
-ENVIRONMENT=production
-DEBUG=0
-ONEFLOW_DOMAIN=https://oneflow.yourcompany.com
-DOMAIN_NAME=oneflow.yourcompany.com
-WEB_URL=https://oneflow.yourcompany.com
-SITE_ADDRESS=oneflow.yourcompany.com
-
-# Production AWS S3 Bucket
-AWS_REGION=ap-south-1
-AWS_STORAGE_BUCKET_NAME=oneflow-production-uploads
-AWS_ACCESS_KEY_ID=<PROD_IAM_ACCESS_KEY>
-AWS_SECRET_ACCESS_KEY=<PROD_IAM_SECRET_KEY>
-USE_MINIO=0
-
-# High-Entropy Cryptographic Keys
-SECRET_KEY=<generate-50-character-random-secret>
-MACHINE_SIGNATURE=<generate-16-byte-hex-signature>
-LIVE_SERVER_SECRET_KEY=<generate-32-character-secret>
-
-# Production Keycloak / OneSSO Credentials
-KEYCLOAK_CLIENT_ID=OneFlow-Production
-KEYCLOAK_CLIENT_SECRET=<PROD_KEYCLOAK_SECRET>
-KEYCLOAK_ISSUER_URL=https://sso.yourcompany.com/realms/production
-KEYCLOAK_REDIRECT_URI=https://oneflow.yourcompany.com/auth/oidc/callback/
-
-# Scaling & Worker Threads
-GUNICORN_WORKERS=4
-API_REPLICAS=2
-WORKER_REPLICAS=2
-```
-
-#### Step 2: Database Persistence & Automated Backups
-Set up a daily cron job on the host server to create compressed PostgreSQL backups:
-```bash
-# Add to crontab: crontab -e
-0 2 * * * sudo docker exec plane-db pg_dump -U plane -d plane | gzip > /home/ubuntu/backups/plane_db_$(date +\%F).sql.gz
-```
-
-#### Step 3: S3 Bucket Security Policies
-On your production AWS S3 bucket (`oneflow-production-uploads`):
-1. **Block Public Access**: Keep all public access blocked; all file access is mediated via presigned URLs generated by the API.
-2. **CORS Policy**: Restrict `AllowedOrigins` to `https://oneflow.yourcompany.com`.
-3. **Enable Bucket Versioning**: Protect against accidental file deletion.
-4. **Lifecycle Rules**: Transition older deleted files to Amazon S3 Glacier after 90 days.
-
----
-
-## 💻 Server Prerequisites
-
-| Component | Minimum Specification | Recommended Production Specification |
-| :--- | :--- | :--- |
-| **Operating System** | Ubuntu 22.04 / 24.04 LTS | Ubuntu 24.04 LTS (x86_64 or ARM64) |
-| **Processor (CPU)** | 2 vCPU cores | 4+ vCPU cores |
-| **Memory (RAM)** | 4 GB RAM (with 2GB Swap) | 8+ GB RAM |
-| **Disk Storage** | 30 GB SSD | 80+ GB NVMe SSD |
-| **Network** | Ports `80` and `443` open to internet | Static Elastic IP with DNS A-Record configured |
-| **Software** | Docker Engine 24.0+ & Docker Compose v2 | Docker Engine 26.0+ |
-
----
-
-## 🚀 Automated Setup Script (`setup.sh`)
-
-OneFlow includes an automated setup script that configures environments, generates cryptographic tokens, launches all services, and validates health checks:
+To launch or update **Staging** or **Production**, run `./setup.sh`:
 
 ```bash
 cd /home/ubuntu/plane
 ./setup.sh
 ```
 
-### Script Execution Steps:
-1. **Auto-Detection**: Validates presence of source code and compose definitions.
-2. **Domain Propagation**: Prompts for deployment domain (e.g. `oneflow.cubeone.in`) and automatically synchronizes CORS, CSRF, and Caddy routing across all 7 `.env` files.
-3. **Secret Generation**: Automatically generates high-entropy Django `SECRET_KEY` and `MACHINE_SIGNATURE` if unconfigured.
-4. **Image Verification**: Validates or builds the custom OneFlow images.
-5. **Orchestration**: Launches the Docker Compose stack in detached mode.
-6. **Health Polling**: Awaits `plane-migrator` completion (`Exit 0`) and verifies API/Web responsiveness.
+#### Interactive Flow:
+
+1. **Deployment Domain**:
+   ```text
+    ╭─[ DEPLOYMENT DOMAIN CONFIGURATION ]────────────────────────╮
+    │  Enter the public domain or IP address for OneFlow.        │
+    │  Examples: oneflow.cubeone.in or 13.234.29.32              │
+    ╰────────────────────────────────────────────────────────────╯
+
+    Enter Domain [default: oneflow.cubeone.in]: 
+   ```
+
+2. **Environment & Secrets Source (3 Options)**:
+   ```text
+    ╭─[ ENVIRONMENT & SECRETS CONFIGURATION ]────────────────────╮
+    │  Select how you want to provide environment variables:     │
+    │                                                            │
+    │    [1] Local .env file (Use local plane.env / .env)        │
+    │    [2] Self-Hosted Infisical — Staging (config.cubeone.in) │
+    │    [3] Self-Hosted Infisical — Production (config.cubeone) │
+    ╰────────────────────────────────────────────────────────────╯
+
+    Select Option [1/2/3, default: 1]: 
+   ```
+
+#### How Each Option Works:
+- **Option 1 (Local `.env` file)**: Reads the local `plane.env` file on disk. Ideal for deployments with pre-provisioned environment files.
+- **Option 2 (Self-Hosted Infisical — Staging)**:
+  - Connects to `https://config.cubeone.in`.
+  - Project ID: `f10e0d79-aa86-4c35-862a-e44ed0f482e3` (project: `oneflow`).
+  - Target Environment: `staging`.
+  - Authenticates via **Universal Auth** (Machine Identity Client ID + Client Secret) or **Service Token** (`st.xxx`).
+  - Pulls all staging secrets and writes them to `plane.env`.
+- **Option 3 (Self-Hosted Infisical — Production)**:
+  - Connects to `https://config.cubeone.in`.
+  - Project ID: `f10e0d79-aa86-4c35-862a-e44ed0f482e3`.
+  - Target Environment: `prod` / `production`.
+  - Pulls all production secrets and writes them to `plane.env`.
+
+#### Non-Interactive / CI/CD Automation Flags:
+You can pass arguments directly to `./setup.sh` to run unattended:
+```bash
+# Deploy Staging using local .env
+./setup.sh --domain oneflow.cubeone.in --env-source 1 --no-prompt
+
+# Deploy Staging pulling from Infisical with Universal Auth
+./setup.sh --domain oneflow.cubeone.in --env-source 2 \
+  --infisical-client-id "<CLIENT_ID>" --infisical-client-secret "<CLIENT_SECRET>" --no-prompt
+
+# Deploy Production pulling from Infisical with Service Token
+./setup.sh --domain oneflow.yourcompany.com --env-source 3 \
+  --infisical-token "st.xxxx" --no-prompt
+```
+
+---
+
+### 3. Production Hardening & Best Practices
+
+When operating OneFlow in Production:
+1. **Automate Daily Database Backups**:
+   ```bash
+   0 2 * * * sudo docker exec plane-db pg_dump -U plane -d plane | gzip > /home/ubuntu/backups/plane_db_$(date +\%F).sql.gz
+   ```
+2. **S3 Bucket Security**:
+   - Production bucket: `oneflow-production-uploads` in `ap-south-1`.
+   - Maintain "Block all public access" (all access is securely mediated via presigned URLs).
+   - Enable bucket versioning and lifecycle policies to Amazon S3 Glacier.
+3. **Scaling**:
+   - `GUNICORN_WORKERS=4`
+   - `API_REPLICAS=2`
+   - `WORKER_REPLICAS=2`
 
 ---
 

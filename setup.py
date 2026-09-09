@@ -14,8 +14,11 @@ import subprocess
 import secrets
 import re
 import signal
+import json
+import getpass
 import urllib.request
 import urllib.error
+import urllib.parse
 
 # ANSI Color Palette (Brand: onebiz Coral #E81B5B)
 CLR_PRIMARY    = "\033[38;2;232;27;91m"     # Brand Coral
@@ -717,45 +720,66 @@ class TUIState:
         # --- Phase 2: Probe Service Endpoints & Check API/Worker Health ---
         self.set_progress(88, "Probing service endpoints and container health...")
         self.add_activity("info", "Probing gateway and backend REST API...")
-        self.log("health", "Initiating health checks on http://127.0.0.1:80/ and backend /api/instances/")
+        self.log("health", "Initiating health checks on gateway and backend /api/instances/")
 
-        retries = 35
+        retries = 60
         app_ready = False
         api_ready = False
         http_code = 0
         api_code = 0
+        internal_api = 0
+
+        final_host = os.environ.get("DOMAIN_NAME", "127.0.0.1")
 
         for i in range(1, retries + 1):
             self.log("health", f"Probing gateway and backend (attempt {i}/{retries})...")
-            # Probe Web Gateway
+            # 1. Probe Web Gateway (with Host header and 5s timeout)
             try:
-                req = urllib.request.Request("http://127.0.0.1:80/", headers={"User-Agent": "oneflow-healthcheck"})
-                with urllib.request.urlopen(req, timeout=2) as resp:
+                req = urllib.request.Request("http://127.0.0.1:80/", headers={"User-Agent": "oneflow-healthcheck", "Host": final_host})
+                with urllib.request.urlopen(req, timeout=5) as resp:
                     http_code = resp.getcode()
             except urllib.error.HTTPError as e:
                 http_code = e.code
             except Exception:
                 http_code = 0
 
-            # Probe Backend REST API endpoint directly through gateway
+            # 2. Probe Backend REST API endpoint directly through gateway
             try:
-                api_req = urllib.request.Request("http://127.0.0.1:80/api/instances/", headers={"User-Agent": "oneflow-healthcheck"})
-                with urllib.request.urlopen(api_req, timeout=2) as resp:
+                api_req = urllib.request.Request("http://127.0.0.1:80/api/instances/", headers={"User-Agent": "oneflow-healthcheck", "Host": final_host})
+                with urllib.request.urlopen(api_req, timeout=5) as resp:
                     api_code = resp.getcode()
             except urllib.error.HTTPError as e:
                 api_code = e.code
             except Exception:
                 api_code = 0
 
-            if http_code in [200, 301, 302] and api_code == 200:
+            # 3. Probe directly inside API container if gateway check hasn't responded yet
+            if api_code != 200:
+                try:
+                    res = subprocess.run(
+                        self.docker_cmd + ["exec", "api", "python3", "-c", "import urllib.request; resp=urllib.request.urlopen('http://127.0.0.1:8000/api/instances/', timeout=3); print(resp.getcode())"],
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=5
+                    )
+                    if res.returncode == 0 and res.stdout.strip() == "200":
+                        internal_api = 200
+                except Exception:
+                    internal_api = 0
+
+            # Accept 200, 301, 302, 308 on gateway (Caddy redirects HTTP to HTTPS when domain is configured)
+            gateway_ok = http_code in [200, 301, 302, 308]
+            api_ok = (api_code == 200) or (internal_api == 200)
+
+            if gateway_ok and api_ok:
                 app_ready = True
                 api_ready = True
-                self.log("health", f"Gateway (HTTP {http_code}) and Backend API (HTTP {api_code}) operational")
+                self.log("health", f"Gateway (HTTP {http_code}) and Backend API (HTTP {api_code or internal_api}) operational")
                 break
-            elif http_code in [200, 301, 302]:
-                self.log("health", f"Gateway online (HTTP {http_code}); awaiting backend initialization (API HTTP {api_code})...")
+            elif gateway_ok:
+                self.log("health", f"Gateway online (HTTP {http_code}); awaiting Gunicorn worker initialization (API {api_code}, internal {internal_api})...")
+            else:
+                self.log("health", f"Waiting for services... Gateway={http_code}, API={api_code}")
 
-            time.sleep(2)
+            time.sleep(3)
 
         # --- Phase 3: Check for Container Crash Loops ---
         restart_issues = False
@@ -875,7 +899,110 @@ def detect_server_ip(deploy_dir: str, source_dir: str) -> str:
     except Exception:
         pass
 
-    return "localhost"
+def fetch_infisical_secrets(deploy_dir: str, env_name: str) -> bool:
+    """Fetch secrets from self-hosted Infisical (config.cubeone.in) and merge into plane.env."""
+    infisical_host = os.environ.get("INFISICAL_HOST", "https://config.cubeone.in").rstrip("/")
+    project_id = os.environ.get("INFISICAL_PROJECT_ID", "f10e0d79-aa86-4c35-862a-e44ed0f482e3")
+    auth_token = os.environ.get("INFISICAL_TOKEN", "")
+    client_id = os.environ.get("INFISICAL_CLIENT_ID", "")
+    client_secret = os.environ.get("INFISICAL_CLIENT_SECRET", "")
+
+    if not auth_token and client_id and client_secret:
+        try:
+            login_url = f"{infisical_host}/api/v1/auth/universal-auth/login"
+            req = urllib.request.Request(
+                login_url,
+                data=json.dumps({"clientId": client_id, "clientSecret": client_secret}).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                auth_token = data.get("accessToken", "")
+        except Exception as e:
+            print(f" {CLR_DANGER}✗{CLR_RESET}  Infisical Universal Auth login error: {e}")
+
+    if not auth_token and sys.stdin.isatty():
+        env_label = "STAGING" if env_name == "staging" else "PRODUCTION"
+        print(f"\n {CLR_PRIMARY}{CLR_BOLD}╭─[ INFISICAL AUTHENTICATION ({env_label}) ]─────────────────╮{CLR_RESET}")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}  Infisical Host: {CLR_CYAN}{infisical_host}{CLR_RESET}")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}  Project ID:     {CLR_MUTED}{project_id}{CLR_RESET}")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}  Target Env:     {CLR_PRIMARY}{env_name}{CLR_RESET}")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}  Choose Auth Method:")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}    [1] Universal Auth (Client ID + Client Secret)")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}    [2] Service Token (st.xxx)")
+        print(f" {CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯{CLR_RESET}\n")
+        try:
+            auth_method = input(" Select Auth Method [1/2, default: 1]: ").strip() or "1"
+            if auth_method == "2":
+                auth_token = input(" Enter Infisical Service Token: ").strip()
+            else:
+                cid = input(" Enter Infisical Client ID: ").strip()
+                csec = getpass.getpass(" Enter Infisical Client Secret: ").strip()
+                if cid and csec:
+                    login_url = f"{infisical_host}/api/v1/auth/universal-auth/login"
+                    req = urllib.request.Request(
+                        login_url,
+                        data=json.dumps({"clientId": cid, "clientSecret": csec}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        auth_token = data.get("accessToken", "")
+        except Exception as e:
+            print(f" {CLR_DANGER}✗{CLR_RESET}  Infisical authentication failed: {e}")
+
+    if not auth_token:
+        print(f" {CLR_WARNING}▲{CLR_RESET}  No Infisical credentials provided; using existing local configuration.")
+        return False
+
+    print(f" {CLR_MUTED}Fetching '{env_name}' secrets from Infisical ({infisical_host})...{CLR_RESET}")
+    secrets_list = []
+    env_candidates = [env_name]
+    if env_name in ["prod", "production"]:
+        env_candidates = ["prod", "production"]
+
+    for candidate in env_candidates:
+        try:
+            url = f"{infisical_host}/api/v3/secrets/raw?workspaceId={project_id}&environment={candidate}&secretPath=/"
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {auth_token}"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                secrets_list = data.get("secrets", [])
+                if secrets_list:
+                    break
+        except Exception:
+            pass
+
+    if not secrets_list:
+        print(f" {CLR_DANGER}✗{CLR_RESET}  Could not retrieve secrets from Infisical for {env_name}. Using local configuration.")
+        return False
+
+    print(f" {CLR_SUCCESS}✓{CLR_RESET}  Successfully retrieved {CLR_BOLD}{len(secrets_list)}{CLR_RESET} secrets from Infisical ({env_name})")
+
+    plane_env_path = os.path.join(deploy_dir, "plane.env")
+    existing_vars = {}
+    if os.path.isfile(plane_env_path):
+        with open(plane_env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    existing_vars[k.strip()] = v.strip()
+
+    for s in secrets_list:
+        k = s.get("secretKey")
+        v = s.get("secretValue", "")
+        if k:
+            existing_vars[k] = v
+
+    existing_vars["ENVIRONMENT"] = env_name
+    with open(plane_env_path, "w") as f:
+        f.write(f"# Synced via Infisical ({env_name}) - {datetime.datetime.now().isoformat()}\n")
+        for k, v in sorted(existing_vars.items()):
+            f.write(f"{k}={v}\n")
+
+    return True
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -938,6 +1065,38 @@ def main():
         os.environ["APP_DOMAIN"] = final_host
         os.environ["APP_PROTOCOL"] = final_scheme
         os.environ["ONEFLOW_DOMAIN_CONFIGURED"] = "1"
+
+        # ── Environment & Secrets Configuration (3 Options) ───────────────
+        cli_env_source = None
+        for i, arg in enumerate(sys.argv):
+            if arg in ["--env-source", "-e"] and i + 1 < len(sys.argv):
+                cli_env_source = sys.argv[i + 1]
+            elif arg.startswith("--env-source="):
+                cli_env_source = arg.split("=", 1)[1]
+
+        if not cli_env_source and not no_prompt and sys.stdin.isatty():
+            print(f"\n {CLR_PRIMARY}{CLR_BOLD}╭─[ ENVIRONMENT & SECRETS CONFIGURATION ]────────────────────╮{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_BOLD}Select how you want to provide environment variables:{CLR_RESET}     {CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}                                                            {CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[1] Local .env file{CLR_RESET} (Use local plane.env / .env)        {CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[2] Self-Hosted Infisical — Staging{CLR_RESET} (config.cubeone.in) {CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}│{CLR_RESET}    {CLR_CYAN}[3] Self-Hosted Infisical — Production{CLR_RESET} (config.cubeone) {CLR_PRIMARY}│{CLR_RESET}")
+            print(f" {CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯{CLR_RESET}\n")
+            try:
+                val = input(" Select Option [1/2/3, default: 1]: ").strip()
+                cli_env_source = val if val else "1"
+            except (EOFError, KeyboardInterrupt):
+                print("")
+                sys.exit(1)
+        elif not cli_env_source:
+            cli_env_source = "1"
+
+        if cli_env_source in ["2", "staging", "Staging"]:
+            fetch_infisical_secrets(deploy_dir, "staging")
+        elif cli_env_source in ["3", "prod", "production", "Production"]:
+            fetch_infisical_secrets(deploy_dir, "prod")
+        else:
+            print(f" {CLR_SUCCESS}✓{CLR_RESET}  Using local environment configuration ({os.path.join(deploy_dir, 'plane.env')})")
 
         # ── Comprehensive domain sync ──────────────────────────────────────
         def _upsert(content: str, key: str, val: str) -> str:
