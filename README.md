@@ -31,6 +31,7 @@
 - [Container Architecture & Service Explanations](#-container-architecture--service-explanations)
 - [Why `oneflow-migrator` Exits with Code 0 (`Exited (0)`)](#-why-oneflow-migrator-exits-with-code-0-exited-0)
 - [Storage Architecture: Local Server Data vs. AWS S3](#-storage-architecture-local-server-data-vs-aws-s3)
+- [Network Ports & AWS Security Groups Architecture](#-network-ports--aws-security-groups-architecture)
 - [Multi-Environment Deployment Guide](#-multi-environment-deployment-guide)
   - [1. Local Development](#1-local-development-setup)
   - [2. Staging Environment](#2-staging-deployment-current-live-setup)
@@ -39,7 +40,6 @@
 - [Automated Setup Script (`setup.sh`)](#-automated-setup-script-setupsh)
 - [Environment Variables Reference](#-environment-variables-reference)
 - [Operational Commands & Maintenance](#-operational-commands--maintenance)
-- [Credentials & Security Management](#-credentials--security-management)
 - [Brand Identity & Design System](#-brand-identity--design-system)
 - [License](#-license)
 
@@ -348,6 +348,75 @@ Mounted to the `plane-redis` container for fast in-memory caching and messaging:
 
 ---
 
+## 🌐 Network Ports & AWS Security Groups Architecture
+
+one flow separates its network architecture into **Public Gateway Ports** (managed via the Caddy reverse proxy) and **Internal Service Ports** (isolated inside Docker's internal virtual bridge network).
+
+```
+ ┌─────────────────────────────────────────────────────────────┐
+ │                  Internet / Public Traffic                  │
+ └──────────────────────┬──────────────────────┬───────────────┘
+                        │ Port 80 (HTTP)       │ Port 443 (HTTPS)
+                        ▼                      ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │           Host Gateway / Reverse Proxy (proxy: Caddy)       │
+ └──────────────────────┬──────────────────────────────────────┘
+                        │ Isolated Internal Docker Bridge Network
+        ┌───────────────┼───────────────┬───────────────┐
+        │ Port 3000     │ Port 3000     │ Port 8000     │ Port 5432 / 6379
+        ▼               ▼               ▼               ▼
+ ┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐
+ │  web / space ││ live (WS)    ││ api / worker ││  db / redis  │
+ │  (Frontend)  ││ (Sync)       ││ (Backend)    ││  (Data Layer)│
+ └──────────────┘└──────────────┘└──────────────┘└──────────────┘
+```
+
+### 1. Service Port Mappings
+
+| Service | Container Name | Internal Port | Host Port Exposed | Purpose / Protocol |
+| :--- | :--- | :---: | :---: | :--- |
+| **Reverse Proxy** | `proxy` | `80`, `443` | **`80`, `443`** | **Public Gateway**: Caddy reverse proxy handling HTTP/HTTPS traffic, TLS certificate management, and upstream path routing. |
+| **Web App** | `web` | `3000` | None (Internal) | Next.js main user interface. |
+| **Admin Console** | `admin` | `3000` | None (Internal) | Instance administration dashboard (`/god-mode/`). |
+| **Public Spaces** | `space` | `3000` | None (Internal) | Public document and issue portal (`/spaces/`). |
+| **Live Collaboration** | `plane-live` | `3000` | None (Internal) | HocusPocus / Express WebSocket synchronization engine for collaborative editing. |
+| **Backend API** | `api` | `8000` | None (Internal) | Django REST Framework API server. |
+| **Background Worker** | `bgworker` | — | None (Internal) | Celery asynchronous worker (communicates via Redis, does not listen on a port). |
+| **Database** | `plane-db` | `5432` | None (Internal) | PostgreSQL relational database. |
+| **Cache & Broker** | `plane-redis` | `6379` | None (Internal) | Valkey / Redis in-memory cache and pub/sub message broker. |
+
+---
+
+### 2. Recommended AWS EC2 Security Group Configuration
+
+Configure your AWS Security Groups following the principle of least privilege:
+
+#### Inbound Rules (Ingress)
+Only open the public web ports and restricted administrative SSH:
+
+| Type | Protocol | Port Range | Source | Purpose / Justification |
+| :--- | :---: | :---: | :--- | :--- |
+| **HTTPS** | TCP | `443` | `0.0.0.0/0` (IPv4)<br>`::/0` (IPv6) | **Required**: Public SSL/TLS entrypoint for all web traffic, API calls, and collaborative WebSockets. |
+| **HTTP** | TCP | `80` | `0.0.0.0/0` (IPv4)<br>`::/0` (IPv6) | **Required**: Automated Let's Encrypt ACME HTTP-01 challenge validation and automatic HTTP-to-HTTPS redirection. |
+| **SSH** | TCP | `22` | `Your-Admin-IP/32` or Bastion SG | **Administrative**: Server maintenance and terminal access. **Never leave open to `0.0.0.0/0`.** |
+
+> [!CAUTION]
+> **Do NOT expose internal ports in your AWS Inbound Security Group:**
+> Ports `3000`, `5432`, `6379`, and `8000` are bound exclusively inside Docker's internal virtual bridge network. They must **never** be added to your EC2 Inbound Security Group rules. All client traffic must enter exclusively via Caddy on port `443`.
+
+#### Outbound Rules (Egress)
+The EC2 server requires outbound connectivity to communicate with external cloud services:
+
+| Type | Protocol | Port Range | Destination | Purpose / Justification |
+| :--- | :---: | :---: | :--- | :--- |
+| **HTTPS** | TCP | `443` | `0.0.0.0/0` | Outbound communication to **AWS S3** (`s3.<region>.amazonaws.com`), **Infisical Secret Manager**, **Keycloak / OIDC Identity Providers**, and **Let's Encrypt CA validation**. |
+| **HTTP** | TCP | `80` | `0.0.0.0/0` | Operating system package management (`apt-get`) and outgoing webhooks. |
+| **Custom TCP / SMTPS** | TCP | `587` or `465` | Mail Host / `0.0.0.0/0` | Outbound transactional email delivery via SMTP (if email notifications are configured). |
+| **DNS** | UDP/TCP | `53` | `0.0.0.0/0` (or VPC DNS) | Domain name resolution. |
+| *(Default AWS SG)* | **All Traffic** | **All** | `0.0.0.0/0` | Standard AWS outbound default rule allowing all outbound connections is safe and supported. |
+
+---
+
 ## 🌍 Unified Multi-Environment Deployment Guide (`setup.sh`)
 
 Both **Staging** and **Production** deployments use `./setup.sh` as the single unified entry point. When executed, the script prompts for:
@@ -482,7 +551,6 @@ OneFlow provides a dedicated system administration console known as **God-Mode**
 4. **Workspaces** (`/god-mode/workspace/`): Workspace creation controls, workspace listing, and global member quotas.
 5. **Authentication** (`/god-mode/authentication/`): Enterprise Keycloak / OpenID Connect SSO, GitHub, GitLab, Google, and Gitea auth toggles.
 6. **AI** (`/god-mode/ai/`): LLM model configuration (`gpt-4o-mini`, custom models) and OpenAI credentials.
-7. **Images** (`/god-mode/image/`): Unsplash and external image provider controls.
 
 ---
 
@@ -506,23 +574,32 @@ When operating OneFlow in Production:
 
 ## ⚙️ Environment Variables Reference
 
-| Variable | Current Active Value | Description |
+All environment variables should be defined in your `.env` / `plane.env` file or provisioned securely via Infisical.
+
+| Variable | Format / Example | Description |
 | :--- | :--- | :--- |
-| `ONEFLOW_DOMAIN` | `https://oneflow.cubeone.in` | Canonical deployment URL (Single source of truth). |
-| `DOMAIN_NAME` | `oneflow.cubeone.in` | Domain hostname used for proxy routing and CORS. |
+| `ONEFLOW_DOMAIN` | `https://<your-domain.com>` | Canonical deployment URL (Single source of truth). |
+| `DOMAIN_NAME` | `<your-domain.com>` | Domain hostname used for proxy routing and CORS. |
 | `POSTGRES_DB` | `plane` | PostgreSQL master database name. |
 | `POSTGRES_USER` | `plane` | PostgreSQL master user. |
-| `POSTGRES_PASSWORD` | `plane` | PostgreSQL master password. |
-| `DATABASE_URL` | `postgresql://plane:plane@plane-db:5432/plane` | Full connection URI for Django and Celery. |
+| `POSTGRES_PASSWORD` | `<secure-database-password>` | PostgreSQL master password. |
+| `DATABASE_URL` | `postgresql://<user>:<password>@plane-db:5432/<db_name>` | Full database connection URI. |
 | `REDIS_URL` | `redis://plane-redis:6379/` | Cache and pub/sub connection URI. |
 | `CELERY_BROKER_URL` | `redis://plane-redis:6379/1` | Celery asynchronous task distribution queue. |
-| `AWS_REGION` | `ap-south-1` | AWS region hosting the S3 bucket. |
-| `AWS_STORAGE_BUCKET_NAME`| `oneflow-staging-uploads` | S3 bucket storing user uploads and attachments. |
-| `AWS_ACCESS_KEY_ID` | `AKIAW2H5YDE43UBCZWXX` | AWS IAM programmatic access key ID. |
-| `USE_MINIO` | `0` | Direct AWS S3 enabled (MinIO disabled). |
-| `KEYCLOAK_CLIENT_ID`| `OneFlow` | Keycloak OpenID Connect Client ID. |
-| `KEYCLOAK_ISSUER_URL`| `https://stgsso.cubeone.in/realms/fstech` | Keycloak OIDC realm endpoint. |
-| `LIVE_SERVER_SECRET_KEY`| `htbqvBJAgpm9bzvf3r4urJer0ENReatceh` | WebSocket authentication handshake secret. |
+| `AWS_REGION` | `ap-south-1` | AWS region hosting your S3 bucket. |
+| `AWS_STORAGE_BUCKET_NAME`| `<your-s3-bucket-name>` | S3 bucket storing user uploads and attachments. |
+| `AWS_ACCESS_KEY_ID` | `<your-aws-access-key-id>` | AWS IAM programmatic access key ID. |
+| `AWS_SECRET_ACCESS_KEY` | `<your-aws-secret-access-key>` | AWS IAM programmatic secret access key. |
+| `USE_MINIO` | `0` | `0` for Direct AWS S3; `1` for self-hosted MinIO. |
+| `KEYCLOAK_CLIENT_ID`| `<oidc-client-id>` | Keycloak OpenID Connect Client ID. |
+| `KEYCLOAK_CLIENT_SECRET`| `<oidc-client-secret>` | Keycloak OpenID Connect Client Secret. |
+| `KEYCLOAK_ISSUER_URL`| `https://<sso-domain>/realms/<realm-name>` | Keycloak OIDC realm endpoint. |
+| `LIVE_SERVER_SECRET_KEY`| `<random-secret-token>` | WebSocket authentication handshake secret. |
+| `INFISICAL_HOST` | `https://<infisical-domain>` | Self-hosted or Cloud Infisical instance endpoint. |
+| `INFISICAL_PROJECT_ID` | `<project-uuid>` | Infisical project UUID. |
+| `INFISICAL_ENV` | `prod` / `staging` | Target Infisical secret environment. |
+| `INFISICAL_CLIENT_ID` | `<machine-identity-client-id>` | Machine Identity Client ID for Universal Auth. |
+| `INFISICAL_CLIENT_SECRET`| `<machine-identity-client-secret>` | Machine Identity Client Secret for Universal Auth. |
 
 ---
 
@@ -531,47 +608,48 @@ When operating OneFlow in Production:
 ### Real-Time Aggregated Logs
 ```bash
 # Aggregated log stream for all services
-sudo docker compose -f /home/ubuntu/plane/source/docker-compose.yml --env-file /home/ubuntu/plane/plane.env logs -f
+sudo docker compose logs -f
 
 # Tail specific container logs
 sudo docker logs -f api
 sudo docker logs -f bgworker
 sudo docker logs -f web
 sudo docker logs -f proxy
+sudo docker logs -f plane-live
 ```
 
 ### Restart Application Stack
 ```bash
-cd /home/ubuntu/plane/source
-sudo docker compose --env-file /home/ubuntu/plane/plane.env restart
+# Restart entire stack
+sudo docker compose restart
+
+# Restart specific service (e.g. web, api, or live)
+sudo docker compose restart web
 ```
 
 ### Stop & Start Stack
 ```bash
 # Stop all containers cleanly
-sudo docker compose -f /home/ubuntu/plane/source/docker-compose.yml down
+sudo docker compose down
 
 # Start all containers in background
-sudo docker compose -f /home/ubuntu/plane/source/docker-compose.yml --env-file /home/ubuntu/plane/plane.env up -d
+sudo docker compose up -d
+```
+
+### Rebuild and Force-Recreate After Code Updates
+```bash
+# Pull latest changes from git
+git pull origin main
+
+# Rebuild web container and recreate services cleanly
+sudo docker compose build web
+sudo docker compose up -d --force-recreate --no-deps web
 ```
 
 ### Inspect Container Health & Status
 ```bash
 sudo docker ps -a
 ```
-
----
-
-## 🔐 Credentials & Security Management
-
-All active database credentials, AWS IAM keys, Django secrets, Keycloak OIDC client tokens, and encryption keys are stored in a dedicated file outside git:
-
-```text
-/home/ubuntu/plane/CREDENTIALS.md
-```
-
-> [!IMPORTANT]
-> This credentials file is located in the deploy root outside `/home/ubuntu/plane/source/` and is strictly ignored in `.gitignore`. **Never commit or push this file to GitHub.**
 
 ---
 
