@@ -62,6 +62,7 @@ services:
     env_file:
       - ./apps/api/.env
     environment:
+      PORT: "8000"
       DATABASE_URL: "${DATABASE_URL:-postgresql://plane:plane@plane-db:5432/plane}"
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://plane-redis:6379/1}"

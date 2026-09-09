@@ -23,6 +23,7 @@ export class UserService extends APIService {
   }
 
   async currentUser(cookie: string): Promise<IUser> {
+    logger.info(`[UserService] Fetching current user from: ${this.baseURL}/api/users/me/`);
     return this.get("/api/users/me/", {
       headers: {
         Cookie: cookie,
@@ -31,9 +32,9 @@ export class UserService extends APIService {
       .then((response) => response?.data)
       .catch((error) => {
         const appError = new AppError(error, {
-          context: { operation: "currentUser" },
+          context: { operation: "currentUser", baseURL: this.baseURL },
         });
-        logger.error("Failed to fetch current user", appError);
+        logger.error(`[UserService] Failed to fetch current user from ${this.baseURL}/api/users/me/`, appError);
         throw appError;
       });
   }
