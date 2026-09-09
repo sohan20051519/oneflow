@@ -903,19 +903,20 @@ def main():
     else:
         default_domain = default_candidate
 
+    default_display = default_domain.replace("https://", "").replace("http://", "").rstrip("/")
     if not cli_domain and not no_prompt and not os.environ.get("ONEFLOW_DOMAIN_CONFIGURED") and sys.stdin.isatty():
         print(f"\n {CLR_PRIMARY}{CLR_BOLD}╭─[ DEPLOYMENT DOMAIN CONFIGURATION ]────────────────────────╮{CLR_RESET}")
         print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_BOLD}Enter the public domain or IP address for OneFlow.{CLR_RESET}        {CLR_PRIMARY}│{CLR_RESET}")
-        print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_MUTED}Examples: https://oneflow.cubeone.in or http://13.234.29.32{CLR_RESET} {CLR_PRIMARY}│{CLR_RESET}")
+        print(f" {CLR_PRIMARY}│{CLR_RESET}  {CLR_MUTED}Examples: oneflow.cubeone.in or 13.234.29.32{CLR_RESET}              {CLR_PRIMARY}│{CLR_RESET}")
         print(f" {CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯{CLR_RESET}\n")
         try:
-            val = input(f" Enter Domain [default: {default_domain}]: ").strip()
-            cli_domain = val if val else default_domain
+            val = input(f" Enter Domain [default: {default_display}]: ").strip()
+            cli_domain = val if val else default_display
         except (EOFError, KeyboardInterrupt):
             print("")
             sys.exit(1)
     elif not cli_domain:
-        cli_domain = default_domain
+        cli_domain = default_display
 
     if cli_domain:
         cli_domain = cli_domain.strip().rstrip("/")

@@ -321,23 +321,24 @@ else
     DEFAULT_DOMAIN="http://localhost"
 fi
 
+DEFAULT_DISPLAY=$(echo "$DEFAULT_DOMAIN" | sed -E 's|^https?://||; s|/$||')
 CHOSEN_INPUT=""
 
 if [ -n "$CLI_DOMAIN" ]; then
     CHOSEN_INPUT="$CLI_DOMAIN"
 elif [ "$NO_PROMPT" = true ] || [ ! -t 0 ]; then
-    CHOSEN_INPUT="$DEFAULT_DOMAIN"
+    CHOSEN_INPUT="$DEFAULT_DISPLAY"
 else
     echo ""
     echo -e " ${CLR_PRIMARY}${CLR_BOLD}╭─[ DEPLOYMENT DOMAIN CONFIGURATION ]────────────────────────╮${CLR_RESET}"
     echo -e " ${CLR_PRIMARY}│${CLR_RESET}  ${CLR_BOLD}Enter the public domain or IP address for OneFlow.${CLR_RESET}        ${CLR_PRIMARY}│${CLR_RESET}"
     echo -e " ${CLR_PRIMARY}│${CLR_RESET}  ${CLR_MUTED}Examples:${CLR_RESET}                                                 ${CLR_PRIMARY}│${CLR_RESET}"
-    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}https://oneflow.cubeone.in${CLR_RESET}  (Production with SSL)       ${CLR_PRIMARY}│${CLR_RESET}"
-    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}http://13.234.29.32${CLR_RESET}         (Staging / Public IP)       ${CLR_PRIMARY}│${CLR_RESET}"
-    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}http://localhost${CLR_RESET}            (Local Development)         ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}oneflow.cubeone.in${CLR_RESET}  (Production with SSL)       ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}13.234.29.32${CLR_RESET}        (Staging / Public IP)       ${CLR_PRIMARY}│${CLR_RESET}"
+    echo -e " ${CLR_PRIMARY}│${CLR_RESET}    • ${CLR_CYAN}localhost${CLR_RESET}           (Local Development)         ${CLR_PRIMARY}│${CLR_RESET}"
     echo -e " ${CLR_PRIMARY}╰────────────────────────────────────────────────────────────╯${CLR_RESET}"
     echo ""
-    read -r -p " Enter Domain [default: ${DEFAULT_DOMAIN}]: " USER_DOMAIN_INPUT
+    read -r -p " Enter Domain [default: ${DEFAULT_DISPLAY}]: " USER_DOMAIN_INPUT
     CHOSEN_INPUT="${USER_DOMAIN_INPUT}"
 fi
 
@@ -346,7 +347,7 @@ CHOSEN_INPUT=$(echo "$CHOSEN_INPUT" | xargs)
 CHOSEN_INPUT="${CHOSEN_INPUT%/}"
 
 if [ -z "$CHOSEN_INPUT" ]; then
-    CHOSEN_INPUT="${DEFAULT_DOMAIN}"
+    CHOSEN_INPUT="${DEFAULT_DISPLAY}"
 fi
 
 if [[ "$CHOSEN_INPUT" =~ ^https?:// ]]; then
