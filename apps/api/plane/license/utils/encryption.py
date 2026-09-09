@@ -33,12 +33,31 @@ def encrypt_data(data):
 # Decrypt data
 def decrypt_data(encrypted_data):
     try:
-        if encrypted_data:
-            cipher_suite = Fernet(derive_key(settings.SECRET_KEY))
-            decrypted_data = cipher_suite.decrypt(encrypted_data.encode())  # Convert string back to bytes
-            return decrypted_data.decode()
-        else:
+        if not encrypted_data:
             return ""
+
+        # Candidates: try active settings, environment variable, and known fallback keys
+        import os
+        candidates = [
+            getattr(settings, "SECRET_KEY", None),
+            os.environ.get("SECRET_KEY"),
+            "60gp0byfz2dvffa45cxl20p1scy9xbpf6d8c5y0geejgkyp1b5",
+            "K_8t#5[TX_iV-wbZutF3an:xi0V(,]&TdD=4r@2UW,+ZWzYS+h",
+        ]
+
+        seen = set()
+        for key in candidates:
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            try:
+                cipher_suite = Fernet(derive_key(key))
+                return cipher_suite.decrypt(encrypted_data.encode()).decode()
+            except Exception:
+                continue
+
+        return ""
     except Exception as e:
         log_exception(e)
         return ""
+

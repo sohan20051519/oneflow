@@ -117,3 +117,16 @@ class OIDCCallbackEndpoint(View):
                 base_url=base_host(request=request, is_app=True), next_path=next_path, params=params
             )
             return HttpResponseRedirect(url)
+
+
+class OIDCLogoutEndpoint(View):
+    def get(self, request):
+        from django.contrib.auth import logout
+        logout(request)
+        return HttpResponseRedirect(base_host(request=request, is_app=True))
+
+    def post(self, request):
+        from django.contrib.auth import logout
+        logout(request)
+        return HttpResponseRedirect(base_host(request=request, is_app=True))
+

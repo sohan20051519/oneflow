@@ -250,10 +250,12 @@ unsplash_config_variables = [
     },
 ]
 
+_keycloak_issuer = os.environ.get("KEYCLOAK_ISSUER_URL", os.environ.get("OAUTH2_PROXY_OIDC_ISSUER_URL", "")).rstrip("/")
+
 oidc_config_variables = [
     {
         "key": "IS_OIDC_ENABLED",
-        "value": os.environ.get("IS_OIDC_ENABLED", "0"),
+        "value": os.environ.get("IS_OIDC_ENABLED", "1" if (os.environ.get("OIDC_CLIENT_ID") or os.environ.get("KEYCLOAK_CLIENT_ID")) else "0"),
         "category": "AUTHENTICATION",
         "is_encrypted": False,
     },
@@ -277,25 +279,25 @@ oidc_config_variables = [
     },
     {
         "key": "OIDC_AUTHORIZE_URL",
-        "value": os.environ.get("OIDC_AUTHORIZE_URL", ""),
+        "value": os.environ.get("OIDC_AUTHORIZE_URL", f"{_keycloak_issuer}/protocol/openid-connect/auth" if _keycloak_issuer else ""),
         "category": "AUTHENTICATION",
         "is_encrypted": False,
     },
     {
         "key": "OIDC_TOKEN_URL",
-        "value": os.environ.get("OIDC_TOKEN_URL", ""),
+        "value": os.environ.get("OIDC_TOKEN_URL", f"{_keycloak_issuer}/protocol/openid-connect/token" if _keycloak_issuer else ""),
         "category": "AUTHENTICATION",
         "is_encrypted": False,
     },
     {
         "key": "OIDC_USERINFO_URL",
-        "value": os.environ.get("OIDC_USERINFO_URL", ""),
+        "value": os.environ.get("OIDC_USERINFO_URL", f"{_keycloak_issuer}/protocol/openid-connect/userinfo" if _keycloak_issuer else ""),
         "category": "AUTHENTICATION",
         "is_encrypted": False,
     },
     {
         "key": "OIDC_LOGOUT_URL",
-        "value": os.environ.get("OIDC_LOGOUT_URL", ""),
+        "value": os.environ.get("OIDC_LOGOUT_URL", f"{_keycloak_issuer}/protocol/openid-connect/logout" if _keycloak_issuer else ""),
         "category": "AUTHENTICATION",
         "is_encrypted": False,
     },
