@@ -30,6 +30,7 @@
 - [System Architecture](#-system-architecture)
 - [Container Architecture & Service Explanations](#-container-architecture--service-explanations)
 - [Why `oneflow-migrator` Exits with Code 0 (`Exited (0)`)](#-why-oneflow-migrator-exits-with-code-0-exited-0)
+- [Storage Architecture: Local Server Data vs. AWS S3](#-storage-architecture-local-server-data-vs-aws-s3)
 - [Multi-Environment Deployment Guide](#-multi-environment-deployment-guide)
   - [1. Local Development](#1-local-development-setup)
   - [2. Staging Environment](#2-staging-deployment-current-live-setup)
@@ -242,6 +243,108 @@ CONTAINER ID   IMAGE                     COMMAND                  STATUS
          condition: service_completed_successfully # API waits for migrator exit 0
    ```
    Docker Compose starts `plane-migrator`, waits for it to finish applying all database tables, confirms that it exited with code 0, and only then starts the `api` and `bgworker` services. **Seeing `Exited (0)` indicates your database is completely healthy and up to date.**
+
+---
+
+## 💾 Storage Architecture: Local Server Data vs. AWS S3
+
+one flow implements a clean hybrid storage architecture: all transactional, relational, and real-time state is stored **locally on the server** (PostgreSQL, Valkey/Redis, and host directories), while all binary file assets, attachments, and media blobs are stored **in AWS S3**.
+
+```
+┌────────────────────────────────────────────────────────┐
+│                   one flow Platform                    │
+└───────────────────────────┬────────────────────────────┘
+                            │
+            ┌───────────────┴───────────────┐
+            ▼                               ▼
+┌───────────────────────┐       ┌───────────────────────┐
+│     Local Server      │       │        AWS S3         │
+│  (EC2 / Host Storage) │       │   (Cloud Object Store)│
+├───────────────────────┤       ├───────────────────────┤
+│ • PostgreSQL Database │       │ • Issue Attachments   │
+│ • Valkey/Redis State  │       │ • Editor Embeds/Media │
+│ • Document Binary CRDT│       │ • User Avatars        │
+│ • File Metadata & URLs│       │ • Project Cover Art   │
+│ • Caddy SSL Certs     │       │ • Workspace Logos     │
+│ • Docker Logs/Configs │       │ • Data Exports (CSV)  │
+└───────────────────────┘       └───────────────────────┘
+```
+
+### 1. What is Stored in AWS S3 (`AWS_STORAGE_BUCKET_NAME`)
+
+AWS S3 acts as the primary object storage backend. Only binary file bytes and media assets are stored in the bucket:
+
+* **Issue & Task Attachments:**
+  * Files attached directly to issues (PDFs, ZIPs, spreadsheets, logs, videos, audio, etc.).
+  * Screenshots, diagrams, and inline images pasted into issue descriptions or comments.
+* **Document & Page Editor Media:**
+  * Images and attachments embedded inside collaborative rich-text Pages and document blocks.
+* **User & Workspace Branding Assets:**
+  * User profile photos and avatars.
+  * Workspace logos and custom brand icons.
+  * Project cover images (uploaded by users) and custom project icons.
+* **Export Artifacts:**
+  * Workspace and project exports (CSV, JSON, XLSX) generated asynchronously by background Celery worker tasks. Download links are securely issued via presigned S3 URLs with automatic time-based expiration.
+* **Import Staging Files:**
+  * Uploaded migration files (from Jira, GitHub, or CSV) while being processed by the background worker.
+
+> **Architecture Note:** The database **never** stores raw file binaries. PostgreSQL only stores the **metadata record** (`FileAsset` model: file name, file size in bytes, MIME type, uploader user ID, and S3 asset key/URL).
+
+---
+
+### 2. What is Stored Locally on the Server
+
+All operational, relational, and real-time data is persisted locally on the host machine:
+
+#### A. PostgreSQL Database (`/home/ubuntu/plane/data/db`)
+Mounted directly to the `plane-db` container. Persists all core business logic and structured records:
+* **Users & Workspaces:** User accounts, hashed credentials, Keycloak/OIDC IDs, workspace memberships, role-based access control (RBAC), and user profile settings.
+* **Work Items & Issues:** Issue titles, markdown/HTML descriptions, priority, status/state (*Backlog, Todo, In Progress, Done, Cancelled*), assignees, labels, estimates, deadlines, and parent-child hierarchies.
+* **Cycles & Modules:** Sprint configurations, start/end dates, burndown metrics, milestone ownership, and progress tracking.
+* **Comments & Activities:** All issue comments, threaded replies, emoji reactions, and the complete audit trail / activity history.
+* **Pages & Document Contents:** Document text (`description_html`) and real-time collaborative state (`description_binary` Yjs CRDT data synced by the `live` service).
+* **Asset Metadata Pointers:** Table of `FileAsset` records referencing the external S3 object paths.
+
+#### B. Valkey / Redis (`/home/ubuntu/plane/data/redis`)
+Mounted to the `plane-redis` container for fast in-memory caching and messaging:
+* **Background Task Queues (Database 1):** Celery job broker for sending emails, firing webhook events, executing background exports/imports, and calculating rollover cycles.
+* **Real-time Live Collaboration (Database 0):** WebSocket pub/sub channels (`hocuspocus:admin`), active document subscriber channels, user presence, and multi-user cursor awareness states.
+* **Application Cache:** Ephemeral API response caches, session states, and rate-limiting counters.
+
+#### C. Local Host Filesystem (`/home/ubuntu/`)
+* **Codebase & Configs:** Git repository (`~/oneflow`), Docker Compose files, and environment files (`.env`, `apps/api/.env`, `apps/web/.env`, etc.).
+* **Reverse Proxy & SSL:** Caddy reverse-proxy configuration and automated Let's Encrypt TLS certificates.
+* **Container Storage & Logs:** Docker container layers, volume metadata, and system logs (`/var/lib/docker/containers/`).
+
+---
+
+### 3. Storage Comparison Matrix
+
+| Data Category | Stored Locally (PostgreSQL / Redis / Host) | Stored in AWS S3 | Description |
+| :--- | :---: | :---: | :--- |
+| **User Accounts & Roles** | ✅ **Local (PostgreSQL)** | ❌ | User profiles, emails, role assignments, workspace settings. |
+| **Issues, Cycles & Modules** | ✅ **Local (PostgreSQL)** | ❌ | Titles, descriptions, states, assignees, dates, sprint metrics. |
+| **Comments & Activity Logs** | ✅ **Local (PostgreSQL)** | ❌ | Full issue audit history, comments, and reactions. |
+| **Page / Document Text** | ✅ **Local (PostgreSQL)** | ❌ | Rich-text content (HTML) and Yjs CRDT binary document states. |
+| **File Attachments (PDFs, ZIPs)** | Metadata only | ✅ **AWS S3** | Raw file bytes stored in S3; database stores name, size, S3 URL. |
+| **Pasted Images & Screenshots** | Metadata only | ✅ **AWS S3** | Image blobs stored in S3; markdown links reference S3 keys. |
+| **User Avatars & Project Covers**| URL reference only | ✅ **AWS S3** | Uploaded profile pictures, project cover images, workspace logos. |
+| **Export Files (CSV, JSON, XLSX)**| Job record only | ✅ **AWS S3** | Generated reports stored temporarily with presigned S3 URLs. |
+| **Live Multi-Cursor & Presence** | ✅ **Local (Redis)** | ❌ | Ephemeral real-time collaborative state and awareness. |
+| **Async Background Queues** | ✅ **Local (Redis)** | ❌ | Celery queue for emails, notifications, and scheduled tasks. |
+| **SSL / TLS Certificates** | ✅ **Local (Host / Caddy)** | ❌ | Auto-managed Let's Encrypt certificates on server. |
+
+---
+
+### 4. Backup & Maintenance Recommendations
+
+1. **Local Data Backup (Server):**
+   * Regularly backup the PostgreSQL directory `/home/ubuntu/plane/data/db` using standard `pg_dump`:
+     ```bash
+     sudo docker exec -t plane-db pg_dump -U plane plane > backup_$(date +%Y%m%d).sql
+     ```
+2. **S3 Bucket Backup (AWS):**
+   * Enable **S3 Versioning** and **Lifecycle Rules** on the S3 bucket (`oneflow-staging-uploads`) in the AWS Console to protect against accidental file deletions and manage storage tiering (e.g. Standard to Glacier/Infrequent Access for old exports).
 
 ---
 
