@@ -49,6 +49,8 @@ class S3Storage(S3Boto3Storage):
         )
         self.aws_region = self._get_config_value("AWS_REGION", "ap-south-1")
         endpoint = self._get_config_value("AWS_S3_ENDPOINT_URL") or self._get_config_value("MINIO_ENDPOINT_URL")
+        if endpoint and endpoint.strip().upper() in ("EMPTY", "NONE", "NULL", ""):
+            endpoint = None
         self.aws_s3_endpoint_url = endpoint if endpoint and endpoint.strip() else None
         self.signed_url_expiration = int(self._get_config_value("SIGNED_URL_EXPIRATION", "3600"))
 
