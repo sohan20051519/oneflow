@@ -79,7 +79,7 @@ export const WorkspaceMenuRoot = observer(function WorkspaceMenuRoot(props: Work
       as="div"
       className={cn("relative flex h-full items-center", {
         "w-full justify-center text-center": variant === "sidebar",
-        "w-fit max-w-[150px] sm:max-w-[200px] md:max-w-[240px] text-left": variant === "top-navigation",
+        "w-fit max-w-[110px] sm:max-w-[200px] md:max-w-[240px] text-left": variant === "top-navigation",
       })}
     >
       {({ open, close }: { open: boolean; close: () => void }) => {
@@ -120,13 +120,13 @@ export const WorkspaceMenuRoot = observer(function WorkspaceMenuRoot(props: Work
                 )}
                 aria-label={t("aria_labels.projects_sidebar.open_workspace_switcher")}
               >
-                <div className="flex min-w-0 items-center gap-2 truncate">
+                <div className="flex min-w-0 items-center gap-1.5 sm:gap-2 truncate">
                   <WorkspaceLogo
                     logo={activeWorkspace?.logo_url}
                     name={activeWorkspace?.name}
                     classNames="border border-subtle rounded-md size-6 shrink-0"
                   />
-                  <h4 className="truncate text-13 font-medium text-primary">{activeWorkspace?.name ?? t("loading")}</h4>
+                  <h4 className="truncate text-13 font-medium text-primary max-w-[55px] sm:max-w-[130px] md:max-w-none">{activeWorkspace?.name ?? t("loading")}</h4>
                 </div>
                 <ChevronDownIcon
                   className={cn("size-3.5 flex-shrink-0 text-placeholder duration-200", {
@@ -147,7 +147,7 @@ export const WorkspaceMenuRoot = observer(function WorkspaceMenuRoot(props: Work
               <Menu.Items as={Fragment}>
                 <div
                   className={cn(
-                    "z-50 mt-1 flex w-[19rem] flex-col divide-y divide-subtle rounded-md border border-subtle-1 bg-surface-1 shadow-raised-200 outline-none",
+                    "z-50 mt-1 flex w-[19rem] max-w-[calc(100vw-1.5rem)] flex-col divide-y divide-subtle rounded-md border border-subtle-1 bg-surface-1 shadow-raised-200 outline-none",
                     {
                       "fixed top-11 left-14 origin-top-left": variant === "sidebar",
                       "absolute right-0 top-full origin-top-right": variant === "top-navigation",
