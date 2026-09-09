@@ -6,13 +6,12 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
+import { useParams } from "next/navigation";
 import { Archive, Trash2, X } from "lucide-react";
 import { setPromiseToast } from "@plane/propel/toast";
 import { cn } from "@plane/utils";
 // hooks
 import { useMultipleSelectStore } from "@/hooks/store/use-multiple-select-store";
-import { useIssues } from "@/hooks/store/use-issues";
-import { EIssuesStoreType } from "@plane/types";
 // services
 import { IssueService } from "@/services/issue";
 
@@ -25,9 +24,13 @@ const issueService = new IssueService();
 export const BulkOperationsUpgradeBanner = observer(function BulkOperationsUpgradeBanner(props: Props) {
   const { className } = props;
 
+  // router (workspace slug from URL params)
+  const params = useParams();
+  const workspaceSlug = params?.workspaceSlug as string | undefined;
+  const projectId = params?.projectId as string | undefined;
+
   // store hooks
-  const { selectedEntityIds, selectedEntityDetails, clearSelection } = useMultipleSelectStore();
-  const { issueMap } = useIssues(EIssuesStoreType.PROJECT);
+  const { selectedEntityIds, clearSelection } = useMultipleSelectStore();
 
   // local state
   const [isArchiving, setIsArchiving] = useState(false);
@@ -35,45 +38,15 @@ export const BulkOperationsUpgradeBanner = observer(function BulkOperationsUpgra
 
   const count = selectedEntityIds.length;
 
-  if (count === 0) return null;
-
-  // Group selected issues by project for per-project API calls
-  const issuesByProject: Record<string, string[]> = {};
-  let workspaceSlug = "";
-
-  for (const entityID of selectedEntityIds) {
-    const issue = issueMap?.[entityID];
-    if (issue) {
-      const pId = issue.project_id;
-      if (pId) {
-        if (!issuesByProject[pId]) issuesByProject[pId] = [];
-        issuesByProject[pId].push(entityID);
-        if (!workspaceSlug && issue.workspace_slug) {
-          workspaceSlug = issue.workspace_slug as string;
-        }
-      }
-    }
-  }
-
-  // Fallback: use groupID (which may contain project info) from selectedEntityDetails
-  if (!workspaceSlug) {
-    const firstDetail = selectedEntityDetails[0];
-    if (firstDetail?.groupID) {
-      // groupID is often the project state group, not a project ID; skip
-    }
-  }
+  if (count === 0 || !workspaceSlug || !projectId) return null;
 
   const handleBulkArchive = async () => {
-    if (!workspaceSlug || isArchiving) return;
+    if (isArchiving) return;
     setIsArchiving(true);
 
-    const archivePromises = Object.entries(issuesByProject).map(([projectId, issueIds]) =>
-      issueService.bulkArchiveIssues(workspaceSlug, projectId, { issue_ids: issueIds })
-    );
-
-    const archivePromise = Promise.all(archivePromises).then(() => {
-      clearSelection();
-    });
+    const archivePromise = issueService
+      .bulkArchiveIssues(workspaceSlug, projectId, { issue_ids: selectedEntityIds })
+      .then(() => { clearSelection(); });
 
     setPromiseToast(archivePromise, {
       loading: `Archiving ${count} issue${count !== 1 ? "s" : ""}…`,
@@ -91,16 +64,12 @@ export const BulkOperationsUpgradeBanner = observer(function BulkOperationsUpgra
   };
 
   const handleBulkDelete = async () => {
-    if (!workspaceSlug || isDeleting) return;
+    if (isDeleting) return;
     setIsDeleting(true);
 
-    const deletePromises = Object.entries(issuesByProject).map(([projectId, issueIds]) =>
-      issueService.bulkDeleteIssues(workspaceSlug, projectId, { issue_ids: issueIds })
-    );
-
-    const deletePromise = Promise.all(deletePromises).then(() => {
-      clearSelection();
-    });
+    const deletePromise = issueService
+      .bulkDeleteIssues(workspaceSlug, projectId, { issue_ids: selectedEntityIds })
+      .then(() => { clearSelection(); });
 
     setPromiseToast(deletePromise, {
       loading: `Deleting ${count} issue${count !== 1 ? "s" : ""}…`,
@@ -140,7 +109,7 @@ export const BulkOperationsUpgradeBanner = observer(function BulkOperationsUpgra
           <button
             type="button"
             onClick={handleBulkArchive}
-            disabled={isArchiving || isDeleting || !workspaceSlug}
+            disabled={isArchiving || isDeleting}
             className="flex items-center gap-1.5 rounded border border-custom-border-200 bg-custom-background-100 px-3 py-1.5 text-xs font-medium text-custom-text-300 hover:bg-custom-background-80 hover:text-custom-text-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Archive className="h-3.5 w-3.5" />
@@ -149,7 +118,7 @@ export const BulkOperationsUpgradeBanner = observer(function BulkOperationsUpgra
           <button
             type="button"
             onClick={handleBulkDelete}
-            disabled={isArchiving || isDeleting || !workspaceSlug}
+            disabled={isArchiving || isDeleting}
             className="flex items-center gap-1.5 rounded border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Trash2 className="h-3.5 w-3.5" />
