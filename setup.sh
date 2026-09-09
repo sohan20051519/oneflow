@@ -447,6 +447,23 @@ existing['ENVIRONMENT'] = '${env_name}'
 with open(plane_env, 'w') as f:
     for k, v in sorted(existing.items()):
         f.write(f'{k}={v}\n')
+
+# Also sync Infisical metadata to apps/api/.env so containers receive it immediately
+api_env = os.path.join('${SOURCE_DIR}', 'apps', 'api', '.env')
+if os.path.isdir(os.path.dirname(api_env)):
+    api_existing = {}
+    if os.path.isfile(api_env):
+        with open(api_env, 'r') as f:
+            for l in f:
+                l = l.strip()
+                if l and not l.startswith('#') and '=' in l:
+                    k, v = l.split('=', 1)
+                    api_existing[k.strip()] = v.strip()
+    for k, v in infisical_meta.items():
+        api_existing[k] = v
+    with open(api_env, 'w') as f:
+        for k, v in sorted(api_existing.items()):
+            f.write(f'{k}={v}\n')
 "
         echo -e " ${CLR_SUCCESS}✓${CLR_RESET}  OneFlow will fetch secrets directly from Infisical at runtime (zero secrets written to plane.env)."
         return 0

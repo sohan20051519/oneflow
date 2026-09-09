@@ -83,6 +83,12 @@ services:
       KEYCLOAK_ISSUER_URL: "${KEYCLOAK_ISSUER_URL:-}"
       KEYCLOAK_DISCOVERY_URL: "${KEYCLOAK_DISCOVERY_URL:-}"
       KEYCLOAK_SCOPES: "${KEYCLOAK_SCOPES:-openid profile email}"
+      INFISICAL_HOST: "${INFISICAL_HOST:-https://config.cubeone.in}"
+      INFISICAL_PROJECT_ID: "${INFISICAL_PROJECT_ID:-f10e0d79-aa86-4c35-862a-e44ed0f482e3}"
+      INFISICAL_ENV: "${INFISICAL_ENV:-prod}"
+      INFISICAL_CLIENT_ID: "${INFISICAL_CLIENT_ID:-}"
+      INFISICAL_CLIENT_SECRET: "${INFISICAL_CLIENT_SECRET:-}"
+      INFISICAL_TOKEN: "${INFISICAL_TOKEN:-}"
     depends_on:
       plane-db:
         condition: service_healthy
@@ -118,6 +124,12 @@ services:
       AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
       USE_MINIO: "0"
       AWS_S3_ENDPOINT_URL: ""
+      INFISICAL_HOST: "${INFISICAL_HOST:-https://config.cubeone.in}"
+      INFISICAL_PROJECT_ID: "${INFISICAL_PROJECT_ID:-f10e0d79-aa86-4c35-862a-e44ed0f482e3}"
+      INFISICAL_ENV: "${INFISICAL_ENV:-prod}"
+      INFISICAL_CLIENT_ID: "${INFISICAL_CLIENT_ID:-}"
+      INFISICAL_CLIENT_SECRET: "${INFISICAL_CLIENT_SECRET:-}"
+      INFISICAL_TOKEN: "${INFISICAL_TOKEN:-}"
     depends_on:
       api:
         condition: service_started
@@ -141,6 +153,12 @@ services:
     environment:
       DATABASE_URL: "${DATABASE_URL:-postgresql://plane:plane@plane-db:5432/plane}"
       REDIS_URL: "${REDIS_URL:-redis://plane-redis:6379/}"
+      INFISICAL_HOST: "${INFISICAL_HOST:-https://config.cubeone.in}"
+      INFISICAL_PROJECT_ID: "${INFISICAL_PROJECT_ID:-f10e0d79-aa86-4c35-862a-e44ed0f482e3}"
+      INFISICAL_ENV: "${INFISICAL_ENV:-prod}"
+      INFISICAL_CLIENT_ID: "${INFISICAL_CLIENT_ID:-}"
+      INFISICAL_CLIENT_SECRET: "${INFISICAL_CLIENT_SECRET:-}"
+      INFISICAL_TOKEN: "${INFISICAL_TOKEN:-}"
     depends_on:
       plane-db:
         condition: service_healthy
