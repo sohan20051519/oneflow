@@ -126,3 +126,5 @@ CREDENTIALS*
 *credential*
 *.credentials
 .credentials*
+INFISICAL_SECRETS*
+*infisical_secrets*
