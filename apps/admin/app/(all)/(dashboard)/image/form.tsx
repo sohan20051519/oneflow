@@ -5,13 +5,12 @@
  */
 
 import { useForm } from "react-hook-form";
+import { Lock } from "lucide-react";
 import { Button } from "@plane/propel/button";
-import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { IFormattedInstanceConfiguration, TInstanceImageConfigurationKeys } from "@plane/types";
 // components
 import { ControllerInput } from "@/components/common/controller-input";
-// hooks
-import { useInstance } from "@/hooks/store";
+import { InfisicalBadgeBanner } from "@/components/common/infisical-badge-banner";
 
 type IInstanceImageConfigForm = {
   config: IFormattedInstanceConfiguration;
@@ -19,46 +18,30 @@ type IInstanceImageConfigForm = {
 
 type ImageConfigFormValues = Record<TInstanceImageConfigurationKeys, string>;
 
-export function InstanceImageConfigForm(props: IInstanceImageConfigForm) {
-  const { config } = props;
-  // store hooks
-  const { updateInstanceConfigurations } = useInstance();
-  // form data
+export function InstanceImageConfigForm(_props: IInstanceImageConfigForm) {
+  // form data locked to placeholders
   const {
-    handleSubmit,
     control,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<ImageConfigFormValues>({
     defaultValues: {
-      UNSPLASH_ACCESS_KEY: config["UNSPLASH_ACCESS_KEY"],
+      UNSPLASH_ACCESS_KEY: "",
     },
   });
 
-  const onSubmit = async (formData: ImageConfigFormValues) => {
-    const payload: Partial<ImageConfigFormValues> = { ...formData };
-
-    await updateInstanceConfigurations(payload)
-      .then(() =>
-        setToast({
-          type: TOAST_TYPE.SUCCESS,
-          title: "Success",
-          message: "Image Configuration Settings updated successfully",
-        })
-      )
-      .catch((err) => console.error(err));
-  };
-
   return (
     <div className="space-y-8">
+      <InfisicalBadgeBanner pageName="Third-Party Image Libraries" />
+
       <div className="grid-col grid w-full grid-cols-1 items-center justify-between gap-x-16 gap-y-8 lg:grid-cols-2">
         <ControllerInput
           control={control}
-          type="password"
+          type="text"
           name="UNSPLASH_ACCESS_KEY"
-          label="Access key from your Unsplash account"
+          label="Access key from your Unsplash account (Value fetched from Infisical)"
           description={
             <>
-              You will find your access key in your Unsplash developer console.&nbsp;
+              Unsplash access credentials are provisioned securely through Infisical Secret Manager.&nbsp;
               <a
                 href="https://unsplash.com/documentation#creating-a-developer-account"
                 target="_blank"
@@ -70,15 +53,17 @@ export function InstanceImageConfigForm(props: IInstanceImageConfigForm) {
               </a>
             </>
           }
-          placeholder="oXgq-sdfadsaeweqasdfasdf3234234rassd"
+          placeholder="UNSPLASH_ACCESS_KEY (Value fetched from Infisical)"
           error={Boolean(errors.UNSPLASH_ACCESS_KEY)}
-          required
+          disabled
+          readOnly
         />
       </div>
 
       <div>
-        <Button variant="primary" size="lg" onClick={handleSubmit(onSubmit)} loading={isSubmitting}>
-          {isSubmitting ? "Saving" : "Save changes"}
+        <Button variant="secondary" size="lg" disabled className="opacity-75 cursor-not-allowed">
+          <Lock className="mr-2 h-4 w-4 inline" />
+          Locked (Managed via Infisical)
         </Button>
       </div>
     </div>

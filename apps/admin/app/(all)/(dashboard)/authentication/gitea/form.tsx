@@ -4,26 +4,21 @@
  * See the LICENSE file for details.
  */
 
-import { useState } from "react";
+import React from "react";
 import { isEmpty } from "lodash-es";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
+import { Lock } from "lucide-react";
 // plane internal packages
 import { API_BASE_URL } from "@plane/constants";
 import { Button, getButtonStyling } from "@plane/propel/button";
-import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { IFormattedInstanceConfiguration, TInstanceGiteaAuthenticationConfigurationKeys } from "@plane/types";
 // components
-import { CodeBlock } from "@/components/common/code-block";
-import { ConfirmDiscardModal } from "@/components/common/confirm-discard-modal";
 import type { TControllerInputFormField } from "@/components/common/controller-input";
 import { ControllerInput } from "@/components/common/controller-input";
-import type { TControllerSwitchFormField } from "@/components/common/controller-switch";
-import { ControllerSwitch } from "@/components/common/controller-switch";
 import type { TCopyField } from "@/components/common/copy-field";
 import { CopyField } from "@/components/common/copy-field";
-// hooks
-import { useInstance } from "@/hooks/store";
+import { InfisicalBadgeBanner } from "@/components/common/infisical-badge-banner";
 
 type Props = {
   config: IFormattedInstanceConfiguration;
@@ -31,29 +26,14 @@ type Props = {
 
 type GiteaConfigFormValues = Record<TInstanceGiteaAuthenticationConfigurationKeys, string>;
 
-const GITEA_FORM_SWITCH_FIELD: TControllerSwitchFormField<GiteaConfigFormValues> = {
-  name: "ENABLE_GITEA_SYNC",
-  label: "Gitea",
-};
-
-export function InstanceGiteaConfigForm(props: Props) {
-  const { config } = props;
-  // states
-  const [isDiscardChangesModalOpen, setIsDiscardChangesModalOpen] = useState(false);
-  // store hooks
-  const { updateInstanceConfigurations } = useInstance();
+export function InstanceGiteaConfigForm(_props: Props) {
   // form data
-  const {
-    handleSubmit,
-    control,
-    reset,
-    formState: { errors, isDirty, isSubmitting },
-  } = useForm<GiteaConfigFormValues>({
+  const { control } = useForm<GiteaConfigFormValues>({
     defaultValues: {
-      GITEA_HOST: config["GITEA_HOST"] || "https://gitea.com",
-      GITEA_CLIENT_ID: config["GITEA_CLIENT_ID"],
-      GITEA_CLIENT_SECRET: config["GITEA_CLIENT_SECRET"],
-      ENABLE_GITEA_SYNC: config["ENABLE_GITEA_SYNC"] || "0",
+      GITEA_HOST: "",
+      GITEA_CLIENT_ID: "",
+      GITEA_CLIENT_SECRET: "",
+      ENABLE_GITEA_SYNC: "0",
     },
   });
 
@@ -63,120 +43,61 @@ export function InstanceGiteaConfigForm(props: Props) {
     {
       key: "GITEA_HOST",
       type: "text",
-      label: "Gitea Host",
-      description: (
-        <>Use the URL of your Gitea instance. For the official Gitea instance, use &quot;https://gitea.com&quot;.</>
-      ),
-      placeholder: "https://gitea.com",
-      error: Boolean(errors.GITEA_HOST),
-      required: true,
+      label: "Gitea Host (Value fetched from Infisical)",
+      description: "Gitea server URL configured in Infisical.",
+      placeholder: "GITEA_HOST (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
     {
       key: "GITEA_CLIENT_ID",
       type: "text",
-      label: "Client ID",
-      description: (
-        <>
-          You will get this from your{" "}
-          <a
-            href="https://gitea.com/user/settings/applications"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-          >
-            Gitea OAuth application settings.
-          </a>
-        </>
-      ),
-      placeholder: "70a44354520df8bd9bcd",
-      error: Boolean(errors.GITEA_CLIENT_ID),
-      required: true,
+      label: "Client ID (Value fetched from Infisical)",
+      description: "Gitea OAuth client ID configured in Infisical.",
+      placeholder: "GITEA_CLIENT_ID (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
     {
       key: "GITEA_CLIENT_SECRET",
       type: "password",
-      label: "Client secret",
-      description: (
-        <>
-          Your client secret is also found in your{" "}
-          <a
-            href="https://gitea.com/user/settings/applications"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-          >
-            Gitea OAuth application settings.
-          </a>
-        </>
-      ),
-      placeholder: "9b0050f94ec1b744e32ce79ea4ffacd40d4119cb",
-      error: Boolean(errors.GITEA_CLIENT_SECRET),
-      required: true,
+      label: "Client Secret (Value fetched from Infisical)",
+      description: "Gitea OAuth client secret managed securely in Infisical.",
+      placeholder: "GITEA_CLIENT_SECRET (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
   ];
 
-  const GITEA_SERVICE_FIELD: TCopyField[] = [
+  const GITEA_SERVICE_DETAILS: TCopyField[] = [
     {
-      key: "Callback_URI",
-      label: "Callback URI",
+      key: "Redirect_URI",
+      label: "Redirect URL",
       url: `${originURL}/auth/gitea/callback/`,
       description: (
-        <>
-          We will auto-generate this. Paste this into your <CodeBlock darkerShade>Authorized Callback URI</CodeBlock>{" "}
-          field{" "}
-          <a
-            href={`${control._formValues.GITEA_HOST || "https://gitea.com"}/user/settings/applications`}
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-            aria-label="Gitea OAuth application settings"
-          >
-            here.
-          </a>
-        </>
+        <p>
+          Add this to <span className="font-semibold">Redirect URI</span> in your Gitea application settings.
+        </p>
       ),
     },
   ];
-
-  const onSubmit = async (formData: GiteaConfigFormValues) => {
-    const payload: Partial<GiteaConfigFormValues> = { ...formData };
-
-    try {
-      const response = await updateInstanceConfigurations(payload);
-      setToast({
-        type: TOAST_TYPE.SUCCESS,
-        title: "Done!",
-        message: "Your Gitea authentication is configured. You should test it now.",
-      });
-      reset({
-        GITEA_HOST: response.find((item) => item.key === "GITEA_HOST")?.value,
-        GITEA_CLIENT_ID: response.find((item) => item.key === "GITEA_CLIENT_ID")?.value,
-        GITEA_CLIENT_SECRET: response.find((item) => item.key === "GITEA_CLIENT_SECRET")?.value,
-        ENABLE_GITEA_SYNC: response.find((item) => item.key === "ENABLE_GITEA_SYNC")?.value,
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleGoBack = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
-    if (isDirty) {
-      e.preventDefault();
-      setIsDiscardChangesModalOpen(true);
-    }
-  };
 
   return (
     <>
-      <ConfirmDiscardModal
-        isOpen={isDiscardChangesModalOpen}
-        onDiscardHref="/authentication"
-        handleClose={() => setIsDiscardChangesModalOpen(false)}
-      />
       <div className="flex flex-col gap-8">
+        <InfisicalBadgeBanner pageName="Gitea Authentication" />
+
         <div className="grid w-full grid-cols-2 gap-x-12 gap-y-8">
           <div className="col-span-2 flex flex-col gap-y-4 pt-1 md:col-span-1">
-            <div className="pt-2.5 text-18 font-medium">Gitea-provided details for one flow</div>
+            <div className="pt-2.5 text-18 font-medium">
+              Gitea-provided details for one flow (Value fetched from Infisical)
+            </div>
             {GITEA_FORM_FIELDS.map((field) => (
               <ControllerInput
                 key={field.key}
@@ -188,32 +109,34 @@ export function InstanceGiteaConfigForm(props: Props) {
                 placeholder={field.placeholder}
                 error={field.error}
                 required={field.required}
+                disabled={true}
+                readOnly={true}
               />
             ))}
-            <ControllerSwitch control={control} field={GITEA_FORM_SWITCH_FIELD} />
             <div className="flex flex-col gap-1 pt-4">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  onClick={(e) => void handleSubmit(onSubmit)(e)}
-                  loading={isSubmitting}
-                  disabled={!isDirty}
-                >
-                  {isSubmitting ? "Saving" : "Save changes"}
+              <div className="flex flex-wrap items-center gap-4">
+                <Link href="/configuration/" className={getButtonStyling("primary", "lg")}>
+                  <Lock className="mr-2 h-4 w-4" />
+                  <span>Configure in Infisical</span>
+                </Link>
+                <Button variant="secondary" size="lg" disabled>
+                  Read-only (Value fetched from Infisical)
                 </Button>
-                <Link href="/authentication" className={getButtonStyling("secondary", "lg")} onClick={handleGoBack}>
+                <Link href="/authentication" className={getButtonStyling("secondary", "lg")}>
                   Go back
                 </Link>
               </div>
             </div>
           </div>
-          <div className="col-span-2 md:col-span-1">
-            <div className="flex flex-col gap-y-4 rounded-lg bg-layer-1 px-6 pt-1.5 pb-4">
-              <div className="pt-2 text-18 font-medium">one flow-provided details for Gitea</div>
-              {GITEA_SERVICE_FIELD.map((field) => (
-                <CopyField key={field.key} label={field.label} url={field.url} description={field.description} />
-              ))}
+          <div className="col-span-2 flex flex-col gap-y-6 md:col-span-1">
+            <div className="pt-2 text-18 font-medium">one flow-provided details for Gitea</div>
+
+            <div className="flex flex-col gap-y-4">
+              <div className="flex flex-col gap-y-4 rounded-lg bg-layer-1 px-6 py-4">
+                {GITEA_SERVICE_DETAILS.map((field) => (
+                  <CopyField key={field.key} label={field.label} url={field.url} description={field.description} />
+                ))}
+              </div>
             </div>
           </div>
         </div>

@@ -20,9 +20,9 @@ function GeneralPage() {
   return (
     <PageWrapper
       header={{
-        title: "General settings",
+        title: "General settings (Value fetched from Infisical)",
         description:
-          "Change the name of your instance and instance admin e-mail addresses. Enable or disable telemetry in your instance.",
+          "Instance identity and telemetry parameters. All values are fetched from Infisical.",
       }}
     >
       {instance && instanceAdmins && <GeneralConfigurationForm instance={instance} instanceAdmins={instanceAdmins} />}
@@ -30,6 +30,6 @@ function GeneralPage() {
   );
 }
 
-export const meta: Route.MetaFunction = () => [{ title: "General Settings - God Mode" }];
+export const meta: Route.MetaFunction = () => [{ title: "General Settings (Value fetched from Infisical) - God Mode" }];
 
 export default observer(GeneralPage);

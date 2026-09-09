@@ -22,6 +22,8 @@ type Props = {
   placeholder: string;
   error: boolean;
   required: boolean;
+  disabled?: boolean;
+  readOnly?: boolean;
 };
 
 export type TControllerInputFormField = {
@@ -32,10 +34,12 @@ export type TControllerInputFormField = {
   placeholder: string;
   error: boolean;
   required: boolean;
+  disabled?: boolean;
+  readOnly?: boolean;
 };
 
 export function ControllerInput(props: Props) {
-  const { name, control, type, label, description, placeholder, error, required } = props;
+  const { name, control, type, label, description, placeholder, error, required, disabled, readOnly } = props;
   // states
   const [showPassword, setShowPassword] = useState(false);
 
@@ -52,13 +56,16 @@ export function ControllerInput(props: Props) {
               id={name}
               name={name}
               type={type === "password" && showPassword ? "text" : type}
-              value={value}
+              value={disabled || readOnly ? "" : value}
               onChange={onChange}
               ref={ref}
               hasError={error}
               placeholder={placeholder}
+              disabled={disabled}
+              readOnly={readOnly}
               className={cn("w-full rounded-md font-medium", {
                 "pr-10": type === "password",
+                "cursor-not-allowed bg-layer-subtle text-placeholder": disabled || readOnly,
               })}
             />
           )}

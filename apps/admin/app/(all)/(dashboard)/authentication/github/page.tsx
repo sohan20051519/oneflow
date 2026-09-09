@@ -76,8 +76,8 @@ const InstanceGithubAuthenticationPage = observer(function InstanceGithubAuthent
     <PageWrapper
       customHeader={
         <AuthenticationMethodCard
-          name="GitHub"
-          description="Allow members to login or sign up to plane with their GitHub accounts."
+          name="GitHub (Value fetched from Infisical)"
+          description="Allow members to login or sign up to plane with their GitHub accounts. Values are fetched directly from Infisical."
           icon={
             <img
               src={resolveGeneralTheme(resolvedTheme) === "dark" ? githubDarkModeImage : githubLightModeImage}
@@ -87,16 +87,17 @@ const InstanceGithubAuthenticationPage = observer(function InstanceGithubAuthent
             />
           }
           config={
-            <ToggleSwitch
-              value={isGithubEnabled}
-              onChange={() => {
-                updateConfig("IS_GITHUB_ENABLED", isGithubEnabled ? "0" : "1");
-              }}
-              size="sm"
-              disabled={isSubmitting || !formattedConfig}
-            />
+            <div className="flex items-center gap-2">
+              <span className="text-11 text-tertiary">(Value fetched from Infisical)</span>
+              <ToggleSwitch
+                value={isGithubEnabled}
+                onChange={() => {}}
+                size="sm"
+                disabled={true}
+              />
+            </div>
           }
-          disabled={isSubmitting || !formattedConfig}
+          disabled={true}
           withBorder={false}
         />
       }
@@ -116,6 +117,6 @@ const InstanceGithubAuthenticationPage = observer(function InstanceGithubAuthent
   );
 });
 
-export const meta: Route.MetaFunction = () => [{ title: "GitHub Authentication - God Mode" }];
+export const meta: Route.MetaFunction = () => [{ title: "GitHub Authentication (Value fetched from Infisical) - God Mode" }];
 
 export default InstanceGithubAuthenticationPage;

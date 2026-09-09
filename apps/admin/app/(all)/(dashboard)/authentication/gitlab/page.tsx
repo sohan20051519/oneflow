@@ -67,24 +67,21 @@ const InstanceGitlabAuthenticationPage = observer(function InstanceGitlabAuthent
     <PageWrapper
       customHeader={
         <AuthenticationMethodCard
-          name="GitLab"
-          description="Allow members to login or sign up to plane with their GitLab accounts."
+          name="GitLab (Value fetched from Infisical)"
+          description="Allow members to login or sign up to plane with their GitLab accounts. Values are fetched directly from Infisical."
           icon={<img src={GitlabLogo} height={24} width={24} alt="GitLab Logo" />}
           config={
-            <ToggleSwitch
-              value={Boolean(parseInt(enableGitlabConfig))}
-              onChange={() => {
-                if (Boolean(parseInt(enableGitlabConfig)) === true) {
-                  updateConfig("IS_GITLAB_ENABLED", "0");
-                } else {
-                  updateConfig("IS_GITLAB_ENABLED", "1");
-                }
-              }}
-              size="sm"
-              disabled={isSubmitting || !formattedConfig}
-            />
+            <div className="flex items-center gap-2">
+              <span className="text-11 text-tertiary">(Value fetched from Infisical)</span>
+              <ToggleSwitch
+                value={Boolean(parseInt(enableGitlabConfig))}
+                onChange={() => {}}
+                size="sm"
+                disabled={true}
+              />
+            </div>
           }
-          disabled={isSubmitting || !formattedConfig}
+          disabled={true}
           withBorder={false}
         />
       }
@@ -104,6 +101,6 @@ const InstanceGitlabAuthenticationPage = observer(function InstanceGitlabAuthent
   );
 });
 
-export const meta: Route.MetaFunction = () => [{ title: "GitLab Authentication - God Mode" }];
+export const meta: Route.MetaFunction = () => [{ title: "GitLab Authentication (Value fetched from Infisical) - God Mode" }];
 
 export default InstanceGitlabAuthenticationPage;

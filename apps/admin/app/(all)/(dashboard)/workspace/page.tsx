@@ -18,6 +18,7 @@ import { cn } from "@plane/utils";
 // components
 import { PageWrapper } from "@/components/common/page-wrapper";
 import { WorkspaceListItem } from "@/components/workspace/list-item";
+import { InfisicalBadgeBanner } from "@/components/common/infisical-badge-banner";
 // hooks
 import { useInstance, useWorkspace } from "@/hooks/store";
 // types
@@ -77,34 +78,32 @@ const WorkspaceManagementPage = observer(function WorkspaceManagementPage(_props
   return (
     <PageWrapper
       header={{
-        title: "Workspaces on this instance",
-        description: "See all workspaces and control who can create them.",
+        title: "Workspaces on this instance (Value fetched from Infisical)",
+        description: "See all workspaces and control who can create them. Policies are managed via Infisical.",
       }}
     >
+      <InfisicalBadgeBanner pageName="Workspaces Management" />
+
       <div className="space-y-3">
         {formattedConfig ? (
           <div className={cn("flex w-full items-center gap-14 rounded-sm")}>
             <div className="flex grow items-center gap-4">
               <div className="grow">
-                <div className="pb-1 text-16 font-medium">Prevent anyone else from creating a workspace.</div>
+                <div className="pb-1 text-16 font-medium">
+                  Prevent anyone else from creating a workspace (Value fetched from Infisical)
+                </div>
                 <div className={cn("text-11 leading-5 font-regular text-tertiary")}>
-                  Toggling this on will let only you create workspaces. You will have to invite users to new workspaces.
+                  Workspace creation permission is managed via Infisical runtime variables. (Value fetched from Infisical)
                 </div>
               </div>
             </div>
-            <div className={`shrink-0 pr-4 ${isSubmitting && "opacity-70"}`}>
+            <div className="shrink-0 pr-4 opacity-70">
               <div className="flex items-center gap-4">
                 <ToggleSwitch
                   value={Boolean(parseInt(disableWorkspaceCreation))}
-                  onChange={() => {
-                    if (Boolean(parseInt(disableWorkspaceCreation)) === true) {
-                      updateConfig("DISABLE_WORKSPACE_CREATION", "0");
-                    } else {
-                      updateConfig("DISABLE_WORKSPACE_CREATION", "1");
-                    }
-                  }}
+                  onChange={() => {}}
                   size="sm"
-                  disabled={isSubmitting}
+                  disabled={true}
                 />
               </div>
             </div>

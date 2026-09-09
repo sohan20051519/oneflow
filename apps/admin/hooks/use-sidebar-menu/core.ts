@@ -4,13 +4,21 @@
  * See the LICENSE file for details.
  */
 
-import { Image, BrainCog, Cog, Mail, SlidersHorizontal } from "lucide-react";
+import { Image, BrainCog, Cog, Mail, SlidersHorizontal, Database } from "lucide-react";
 // plane imports
 import { LockIcon, WorkspaceIcon } from "@plane/propel/icons";
 // types
 import type { TSidebarMenuItem } from "./types";
 
-export type TCoreSidebarMenuKey = "general" | "configuration" | "email" | "workspace" | "authentication" | "ai" | "image";
+export type TCoreSidebarMenuKey =
+  | "general"
+  | "configuration"
+  | "email"
+  | "storage"
+  | "workspace"
+  | "authentication"
+  | "ai"
+  | "image";
 
 export const coreSidebarMenuLinks: Record<TCoreSidebarMenuKey, TSidebarMenuItem> = {
   general: {
@@ -30,6 +38,12 @@ export const coreSidebarMenuLinks: Record<TCoreSidebarMenuKey, TSidebarMenuItem>
     name: "Email",
     description: "Configure your SMTP controls.",
     href: `/email/`,
+  },
+  storage: {
+    Icon: Database,
+    name: "AWS S3 Storage",
+    description: "Amazon S3 bucket & object storage controls.",
+    href: `/storage/`,
   },
   workspace: {
     Icon: WorkspaceIcon,

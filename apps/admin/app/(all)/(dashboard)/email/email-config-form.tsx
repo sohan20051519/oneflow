@@ -4,21 +4,17 @@
  * See the LICENSE file for details.
  */
 
-import { useMemo, useState } from "react";
+import React from "react";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
+import { Lock } from "lucide-react";
 // types
-import { Button } from "@plane/propel/button";
-import { TOAST_TYPE, setToast } from "@plane/propel/toast";
+import { Button, getButtonStyling } from "@plane/propel/button";
 import type { IFormattedInstanceConfiguration, TInstanceEmailConfigurationKeys } from "@plane/types";
-// ui
-import { CustomSelect } from "@plane/ui";
 // components
 import type { TControllerInputFormField } from "@/components/common/controller-input";
 import { ControllerInput } from "@/components/common/controller-input";
-// hooks
-import { useInstance } from "@/hooks/store";
-// local components
-import { SendTestEmailModal } from "./test-email-modal";
+import { InfisicalBadgeBanner } from "@/components/common/infisical-badge-banner";
 
 type IInstanceEmailForm = {
   config: IFormattedInstanceConfiguration;
@@ -26,65 +22,54 @@ type IInstanceEmailForm = {
 
 type EmailFormValues = Record<TInstanceEmailConfigurationKeys, string>;
 
-type TEmailSecurityKeys = "EMAIL_USE_TLS" | "EMAIL_USE_SSL" | "NONE";
-
-const EMAIL_SECURITY_OPTIONS: { [key in TEmailSecurityKeys]: string } = {
-  EMAIL_USE_TLS: "TLS",
-  EMAIL_USE_SSL: "SSL",
-  NONE: "No email security",
-};
-
-export function InstanceEmailForm(props: IInstanceEmailForm) {
-  const { config } = props;
-  // states
-  const [isSendTestEmailModalOpen, setIsSendTestEmailModalOpen] = useState(false);
-  // store hooks
-  const { updateInstanceConfigurations } = useInstance();
+export function InstanceEmailForm(_props: IInstanceEmailForm) {
   // form data
-  const {
-    handleSubmit,
-    watch,
-    setValue,
-    control,
-    formState: { errors, isValid, isDirty, isSubmitting },
-  } = useForm<EmailFormValues>({
+  const { control } = useForm<EmailFormValues>({
     defaultValues: {
-      EMAIL_HOST: config["EMAIL_HOST"],
-      EMAIL_PORT: config["EMAIL_PORT"],
-      EMAIL_HOST_USER: config["EMAIL_HOST_USER"],
-      EMAIL_HOST_PASSWORD: config["EMAIL_HOST_PASSWORD"],
-      EMAIL_USE_TLS: config["EMAIL_USE_TLS"],
-      EMAIL_USE_SSL: config["EMAIL_USE_SSL"],
-      EMAIL_FROM: config["EMAIL_FROM"],
-      ENABLE_SMTP: config["ENABLE_SMTP"],
+      EMAIL_HOST: "",
+      EMAIL_PORT: "",
+      EMAIL_HOST_USER: "",
+      EMAIL_HOST_PASSWORD: "",
+      EMAIL_USE_TLS: "",
+      EMAIL_USE_SSL: "",
+      EMAIL_FROM: "",
+      ENABLE_SMTP: "",
     },
   });
+
   const emailFormFields: TControllerInputFormField[] = [
     {
       key: "EMAIL_HOST",
       type: "text",
-      label: "Host",
-      placeholder: "email.google.com",
-      error: Boolean(errors.EMAIL_HOST),
-      required: true,
+      label: "Host (Value fetched from Infisical)",
+      placeholder: "EMAIL_HOST (Value fetched from Infisical)",
+      description: "SMTP host address managed via Infisical.",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
     {
       key: "EMAIL_PORT",
       type: "text",
-      label: "Port",
-      placeholder: "8080",
-      error: Boolean(errors.EMAIL_PORT),
-      required: true,
+      label: "Port (Value fetched from Infisical)",
+      placeholder: "EMAIL_PORT (Value fetched from Infisical)",
+      description: "SMTP port number managed via Infisical.",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
     {
       key: "EMAIL_FROM",
       type: "text",
-      label: "Sender's email address",
-      description:
-        "This is the email address your users will see when getting emails from this instance. You will need to verify this address.",
-      placeholder: "no-reply@oneflow.app",
-      error: Boolean(errors.EMAIL_FROM),
-      required: true,
+      label: "Sender's email address (Value fetched from Infisical)",
+      description: "Default sender email address managed via Infisical.",
+      placeholder: "EMAIL_FROM (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
   ];
 
@@ -92,62 +77,32 @@ export function InstanceEmailForm(props: IInstanceEmailForm) {
     {
       key: "EMAIL_HOST_USER",
       type: "text",
-      label: "Username",
-      placeholder: "getitdone@oneflow.app",
-      error: Boolean(errors.EMAIL_HOST_USER),
+      label: "Username (Value fetched from Infisical)",
+      placeholder: "EMAIL_HOST_USER (Value fetched from Infisical)",
+      description: "SMTP user authentication credential managed via Infisical.",
+      error: false,
       required: false,
+      disabled: true,
+      readOnly: true,
     },
     {
       key: "EMAIL_HOST_PASSWORD",
       type: "password",
-      label: "Password",
-      placeholder: "Password",
-      error: Boolean(errors.EMAIL_HOST_PASSWORD),
+      label: "Password (Value fetched from Infisical)",
+      placeholder: "EMAIL_HOST_PASSWORD (Value fetched from Infisical)",
+      description: "SMTP password credential managed securely in Infisical.",
+      error: false,
       required: false,
+      disabled: true,
+      readOnly: true,
     },
   ];
 
-  const onSubmit = async (formData: EmailFormValues) => {
-    const payload: Partial<EmailFormValues> = { ...formData, ENABLE_SMTP: "1" };
-
-    await updateInstanceConfigurations(payload)
-      .then(() =>
-        setToast({
-          type: TOAST_TYPE.SUCCESS,
-          title: "Success",
-          message: "Email Settings updated successfully",
-        })
-      )
-      .catch((err) => console.error(err));
-  };
-
-  const useTLSValue = watch("EMAIL_USE_TLS");
-  const useSSLValue = watch("EMAIL_USE_SSL");
-  const emailSecurityKey: TEmailSecurityKeys = useMemo(() => {
-    if (useTLSValue === "1") return "EMAIL_USE_TLS";
-    if (useSSLValue === "1") return "EMAIL_USE_SSL";
-    return "NONE";
-  }, [useTLSValue, useSSLValue]);
-
-  const handleEmailSecurityChange = (key: TEmailSecurityKeys) => {
-    if (key === "EMAIL_USE_SSL") {
-      setValue("EMAIL_USE_TLS", "0");
-      setValue("EMAIL_USE_SSL", "1");
-    }
-    if (key === "EMAIL_USE_TLS") {
-      setValue("EMAIL_USE_TLS", "1");
-      setValue("EMAIL_USE_SSL", "0");
-    }
-    if (key === "NONE") {
-      setValue("EMAIL_USE_TLS", "0");
-      setValue("EMAIL_USE_SSL", "0");
-    }
-  };
-
   return (
     <div className="space-y-8">
+      <InfisicalBadgeBanner pageName="Email SMTP Server" />
+
       <div>
-        <SendTestEmailModal isOpen={isSendTestEmailModalOpen} handleClose={() => setIsSendTestEmailModalOpen(false)} />
         <div className="grid-col grid w-full max-w-4xl grid-cols-1 items-start justify-between gap-10 lg:grid-cols-2">
           {emailFormFields.map((field) => (
             <ControllerInput
@@ -160,32 +115,26 @@ export function InstanceEmailForm(props: IInstanceEmailForm) {
               placeholder={field.placeholder}
               error={field.error}
               required={field.required}
+              disabled={true}
+              readOnly={true}
             />
           ))}
           <div className="flex flex-col gap-1">
-            <h4 className="text-13 text-tertiary">Email security</h4>
-            <CustomSelect
-              value={emailSecurityKey}
-              label={EMAIL_SECURITY_OPTIONS[emailSecurityKey]}
-              onChange={handleEmailSecurityChange}
-              buttonClassName="rounded-md border-subtle"
-              input
-            >
-              {Object.entries(EMAIL_SECURITY_OPTIONS).map(([key, value]) => (
-                <CustomSelect.Option key={key} value={key} className="w-full">
-                  {value}
-                </CustomSelect.Option>
-              ))}
-            </CustomSelect>
+            <h4 className="text-13 text-tertiary">Email security (Value fetched from Infisical)</h4>
+            <div className="flex h-10 w-full items-center rounded-md border border-subtle bg-layer-subtle px-3 text-13 font-medium text-placeholder cursor-not-allowed">
+              EMAIL_USE_TLS / EMAIL_USE_SSL (Value fetched from Infisical)
+            </div>
+            <p className="pt-0.5 text-11 text-tertiary">TLS/SSL security protocols configured in Infisical.</p>
           </div>
         </div>
+
         <div className="my-6 flex flex-col gap-6 border-t border-subtle pt-4">
           <div className="flex w-full max-w-xl flex-col gap-y-10 px-1">
             <div className="mr-8 flex items-center gap-10 pt-4">
               <div className="grow">
-                <div className="text-13 font-medium text-primary">Authentication</div>
+                <div className="text-13 font-medium text-primary">Authentication (Value fetched from Infisical)</div>
                 <div className="text-11 font-regular text-tertiary">
-                  This is optional, but we recommend setting up a username and a password for your SMTP server.
+                  SMTP credentials are centrally managed in Infisical.
                 </div>
               </div>
             </div>
@@ -202,29 +151,21 @@ export function InstanceEmailForm(props: IInstanceEmailForm) {
                 placeholder={field.placeholder}
                 error={field.error}
                 required={field.required}
+                disabled={true}
+                readOnly={true}
               />
             ))}
           </div>
         </div>
       </div>
-      <div className="flex max-w-4xl items-center gap-4 py-1">
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={handleSubmit(onSubmit)}
-          loading={isSubmitting}
-          disabled={!isValid || !isDirty}
-        >
-          {isSubmitting ? "Saving" : "Save changes"}
-        </Button>
-        <Button
-          variant="secondary"
-          size="lg"
-          onClick={() => setIsSendTestEmailModalOpen(true)}
-          loading={isSubmitting}
-          disabled={!isValid}
-        >
-          Send test email
+
+      <div className="flex max-w-4xl flex-wrap items-center gap-4 py-1 border-t border-subtle pt-4">
+        <Link href="/configuration/" className={getButtonStyling("primary", "lg")}>
+          <Lock className="mr-2 h-4 w-4" />
+          <span>Configure in Infisical</span>
+        </Link>
+        <Button variant="secondary" size="lg" disabled>
+          Read-only (Value fetched from Infisical)
         </Button>
       </div>
     </div>

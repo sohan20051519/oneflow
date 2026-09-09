@@ -4,26 +4,21 @@
  * See the LICENSE file for details.
  */
 
-import { useState } from "react";
+import React from "react";
 import { isEmpty } from "lodash-es";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
+import { Lock } from "lucide-react";
 // plane internal packages
 import { API_BASE_URL } from "@plane/constants";
 import { Button, getButtonStyling } from "@plane/propel/button";
-import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { IFormattedInstanceConfiguration, TInstanceGitlabAuthenticationConfigurationKeys } from "@plane/types";
 // components
-import { CodeBlock } from "@/components/common/code-block";
-import { ConfirmDiscardModal } from "@/components/common/confirm-discard-modal";
 import type { TControllerInputFormField } from "@/components/common/controller-input";
-import type { TControllerSwitchFormField } from "@/components/common/controller-switch";
-import { ControllerSwitch } from "@/components/common/controller-switch";
 import { ControllerInput } from "@/components/common/controller-input";
 import type { TCopyField } from "@/components/common/copy-field";
 import { CopyField } from "@/components/common/copy-field";
-// hooks
-import { useInstance } from "@/hooks/store";
+import { InfisicalBadgeBanner } from "@/components/common/infisical-badge-banner";
 
 type Props = {
   config: IFormattedInstanceConfiguration;
@@ -31,29 +26,14 @@ type Props = {
 
 type GitlabConfigFormValues = Record<TInstanceGitlabAuthenticationConfigurationKeys, string>;
 
-const GITLAB_FORM_SWITCH_FIELD: TControllerSwitchFormField<GitlabConfigFormValues> = {
-  name: "ENABLE_GITLAB_SYNC",
-  label: "GitLab",
-};
-
-export function InstanceGitlabConfigForm(props: Props) {
-  const { config } = props;
-  // states
-  const [isDiscardChangesModalOpen, setIsDiscardChangesModalOpen] = useState(false);
-  // store hooks
-  const { updateInstanceConfigurations } = useInstance();
+export function InstanceGitlabConfigForm(_props: Props) {
   // form data
-  const {
-    handleSubmit,
-    control,
-    reset,
-    formState: { errors, isDirty, isSubmitting },
-  } = useForm<GitlabConfigFormValues>({
+  const { control } = useForm<GitlabConfigFormValues>({
     defaultValues: {
-      GITLAB_HOST: config["GITLAB_HOST"],
-      GITLAB_CLIENT_ID: config["GITLAB_CLIENT_ID"],
-      GITLAB_CLIENT_SECRET: config["GITLAB_CLIENT_SECRET"],
-      ENABLE_GITLAB_SYNC: config["ENABLE_GITLAB_SYNC"] || "0",
+      GITLAB_HOST: "",
+      GITLAB_CLIENT_ID: "",
+      GITLAB_CLIENT_SECRET: "",
+      ENABLE_GITLAB_SYNC: "0",
     },
   });
 
@@ -63,123 +43,61 @@ export function InstanceGitlabConfigForm(props: Props) {
     {
       key: "GITLAB_HOST",
       type: "text",
-      label: "Host",
-      description: (
-        <>
-          This is either https://gitlab.com or the <CodeBlock>domain.tld</CodeBlock> where you host GitLab.
-        </>
-      ),
-      placeholder: "https://gitlab.com",
-      error: Boolean(errors.GITLAB_HOST),
-      required: true,
+      label: "GitLab Host (Value fetched from Infisical)",
+      description: "GitLab instance hostname configured in Infisical.",
+      placeholder: "GITLAB_HOST (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
     {
       key: "GITLAB_CLIENT_ID",
       type: "text",
-      label: "Application ID",
-      description: (
-        <>
-          Get this from your{" "}
-          <a
-            href="https://docs.gitlab.com/ee/integration/oauth_provider.html"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-          >
-            GitLab OAuth application settings
-          </a>
-          .
-        </>
-      ),
-      placeholder: "c2ef2e7fc4e9d15aa7630f5637d59e8e4a27ff01dceebdb26b0d267b9adcf3c3",
-      error: Boolean(errors.GITLAB_CLIENT_ID),
-      required: true,
+      label: "Application ID (Value fetched from Infisical)",
+      description: "GitLab application ID configured in Infisical.",
+      placeholder: "GITLAB_CLIENT_ID (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
     {
       key: "GITLAB_CLIENT_SECRET",
       type: "password",
-      label: "Secret",
-      description: (
-        <>
-          The client secret is also found in your{" "}
-          <a
-            href="https://docs.gitlab.com/ee/integration/oauth_provider.html"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-          >
-            GitLab OAuth application settings
-          </a>
-          .
-        </>
-      ),
-      placeholder: "gloas-f79cfa9a03c97f6ffab303177a5a6778a53c61e3914ba093412f68a9298a1b28",
-      error: Boolean(errors.GITLAB_CLIENT_SECRET),
-      required: true,
+      label: "Secret (Value fetched from Infisical)",
+      description: "GitLab application secret managed securely in Infisical.",
+      placeholder: "GITLAB_CLIENT_SECRET (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
   ];
 
-  const GITLAB_SERVICE_FIELD: TCopyField[] = [
+  const GITLAB_SERVICE_DETAILS: TCopyField[] = [
     {
-      key: "Callback_URL",
-      label: "Callback URL",
+      key: "Redirect_URI",
+      label: "Redirect URL",
       url: `${originURL}/auth/gitlab/callback/`,
       description: (
-        <>
-          We will auto-generate this. Paste this into the <CodeBlock darkerShade>Redirect URI</CodeBlock> field of your{" "}
-          <a
-            href="https://docs.gitlab.com/ee/integration/oauth_provider.html"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-          >
-            GitLab OAuth application
-          </a>
-          .
-        </>
+        <p>
+          Add this to <span className="font-semibold">Redirect URI</span> in your GitLab application settings.
+        </p>
       ),
     },
   ];
-
-  const onSubmit = async (formData: GitlabConfigFormValues) => {
-    const payload: Partial<GitlabConfigFormValues> = { ...formData };
-
-    try {
-      const response = await updateInstanceConfigurations(payload);
-      setToast({
-        type: TOAST_TYPE.SUCCESS,
-        title: "Done!",
-        message: "Your GitLab authentication is configured. You should test it now.",
-      });
-      reset({
-        GITLAB_HOST: response.find((item) => item.key === "GITLAB_HOST")?.value,
-        GITLAB_CLIENT_ID: response.find((item) => item.key === "GITLAB_CLIENT_ID")?.value,
-        GITLAB_CLIENT_SECRET: response.find((item) => item.key === "GITLAB_CLIENT_SECRET")?.value,
-        ENABLE_GITLAB_SYNC: response.find((item) => item.key === "ENABLE_GITLAB_SYNC")?.value,
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleGoBack = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
-    if (isDirty) {
-      e.preventDefault();
-      setIsDiscardChangesModalOpen(true);
-    }
-  };
 
   return (
     <>
-      <ConfirmDiscardModal
-        isOpen={isDiscardChangesModalOpen}
-        onDiscardHref="/authentication"
-        handleClose={() => setIsDiscardChangesModalOpen(false)}
-      />
       <div className="flex flex-col gap-8">
+        <InfisicalBadgeBanner pageName="GitLab Authentication" />
+
         <div className="grid w-full grid-cols-2 gap-x-12 gap-y-8">
           <div className="col-span-2 flex flex-col gap-y-4 pt-1 md:col-span-1">
-            <div className="pt-2.5 text-18 font-medium">GitLab-provided details for one flow</div>
+            <div className="pt-2.5 text-18 font-medium">
+              GitLab-provided details for one flow (Value fetched from Infisical)
+            </div>
             {GITLAB_FORM_FIELDS.map((field) => (
               <ControllerInput
                 key={field.key}
@@ -191,32 +109,34 @@ export function InstanceGitlabConfigForm(props: Props) {
                 placeholder={field.placeholder}
                 error={field.error}
                 required={field.required}
+                disabled={true}
+                readOnly={true}
               />
             ))}
-            <ControllerSwitch control={control} field={GITLAB_FORM_SWITCH_FIELD} />
             <div className="flex flex-col gap-1 pt-4">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  onClick={(e) => void handleSubmit(onSubmit)(e)}
-                  loading={isSubmitting}
-                  disabled={!isDirty}
-                >
-                  {isSubmitting ? "Saving" : "Save changes"}
+              <div className="flex flex-wrap items-center gap-4">
+                <Link href="/configuration/" className={getButtonStyling("primary", "lg")}>
+                  <Lock className="mr-2 h-4 w-4" />
+                  <span>Configure in Infisical</span>
+                </Link>
+                <Button variant="secondary" size="lg" disabled>
+                  Read-only (Value fetched from Infisical)
                 </Button>
-                <Link href="/authentication" className={getButtonStyling("secondary", "lg")} onClick={handleGoBack}>
+                <Link href="/authentication" className={getButtonStyling("secondary", "lg")}>
                   Go back
                 </Link>
               </div>
             </div>
           </div>
-          <div className="col-span-2 md:col-span-1">
-            <div className="flex flex-col gap-y-4 rounded-lg bg-layer-3 px-6 pt-1.5 pb-4">
-              <div className="pt-2 text-18 font-medium">one flow-provided details for GitLab</div>
-              {GITLAB_SERVICE_FIELD.map((field) => (
-                <CopyField key={field.key} label={field.label} url={field.url} description={field.description} />
-              ))}
+          <div className="col-span-2 flex flex-col gap-y-6 md:col-span-1">
+            <div className="pt-2 text-18 font-medium">one flow-provided details for GitLab</div>
+
+            <div className="flex flex-col gap-y-4">
+              <div className="flex flex-col gap-y-4 rounded-lg bg-layer-1 px-6 py-4">
+                {GITLAB_SERVICE_DETAILS.map((field) => (
+                  <CopyField key={field.key} label={field.label} url={field.url} description={field.description} />
+                ))}
+              </div>
             </div>
           </div>
         </div>

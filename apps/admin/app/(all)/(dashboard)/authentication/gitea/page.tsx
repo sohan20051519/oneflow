@@ -68,20 +68,21 @@ const InstanceGiteaAuthenticationPage = observer(function InstanceGiteaAuthentic
     <PageWrapper
       customHeader={
         <AuthenticationMethodCard
-          name="Gitea"
-          description="Allow members to login or sign up to plane with their Gitea accounts."
+          name="Gitea (Value fetched from Infisical)"
+          description="Allow members to login or sign up to plane with their Gitea accounts. Values are fetched directly from Infisical."
           icon={<img src={giteaLogo} height={24} width={24} alt="Gitea Logo" />}
           config={
-            <ToggleSwitch
-              value={isGiteaEnabled}
-              onChange={() => {
-                updateConfig("IS_GITEA_ENABLED", isGiteaEnabled ? "0" : "1");
-              }}
-              size="sm"
-              disabled={isSubmitting || !formattedConfig}
-            />
+            <div className="flex items-center gap-2">
+              <span className="text-11 text-tertiary">(Value fetched from Infisical)</span>
+              <ToggleSwitch
+                value={isGiteaEnabled}
+                onChange={() => {}}
+                size="sm"
+                disabled={true}
+              />
+            </div>
           }
-          disabled={isSubmitting || !formattedConfig}
+          disabled={true}
           withBorder={false}
         />
       }
@@ -100,6 +101,6 @@ const InstanceGiteaAuthenticationPage = observer(function InstanceGiteaAuthentic
     </PageWrapper>
   );
 });
-export const meta: Route.MetaFunction = () => [{ title: "Gitea Authentication - God Mode" }];
+export const meta: Route.MetaFunction = () => [{ title: "Gitea Authentication (Value fetched from Infisical) - God Mode" }];
 
 export default InstanceGiteaAuthenticationPage;

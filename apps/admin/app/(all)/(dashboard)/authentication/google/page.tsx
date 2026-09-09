@@ -67,25 +67,21 @@ const InstanceGoogleAuthenticationPage = observer(function InstanceGoogleAuthent
     <PageWrapper
       customHeader={
         <AuthenticationMethodCard
-          name="Google"
-          description="Allow members to login or sign up to plane with their Google
-            accounts."
+          name="Google (Value fetched from Infisical)"
+          description="Allow members to login or sign up to plane with their Google accounts. Values are fetched directly from Infisical."
           icon={<img src={GoogleLogo} height={24} width={24} alt="Google Logo" />}
           config={
-            <ToggleSwitch
-              value={Boolean(parseInt(enableGoogleConfig))}
-              onChange={() => {
-                if (Boolean(parseInt(enableGoogleConfig)) === true) {
-                  updateConfig("IS_GOOGLE_ENABLED", "0");
-                } else {
-                  updateConfig("IS_GOOGLE_ENABLED", "1");
-                }
-              }}
-              size="sm"
-              disabled={isSubmitting || !formattedConfig}
-            />
+            <div className="flex items-center gap-2">
+              <span className="text-11 text-tertiary">(Value fetched from Infisical)</span>
+              <ToggleSwitch
+                value={Boolean(parseInt(enableGoogleConfig))}
+                onChange={() => {}}
+                size="sm"
+                disabled={true}
+              />
+            </div>
           }
-          disabled={isSubmitting || !formattedConfig}
+          disabled={true}
           withBorder={false}
         />
       }
@@ -105,6 +101,6 @@ const InstanceGoogleAuthenticationPage = observer(function InstanceGoogleAuthent
   );
 });
 
-export const meta: Route.MetaFunction = () => [{ title: "Google Authentication - God Mode" }];
+export const meta: Route.MetaFunction = () => [{ title: "Google Authentication (Value fetched from Infisical) - God Mode" }];
 
 export default InstanceGoogleAuthenticationPage;

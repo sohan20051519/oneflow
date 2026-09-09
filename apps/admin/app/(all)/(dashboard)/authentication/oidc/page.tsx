@@ -68,24 +68,21 @@ const InstanceOidcAuthenticationPage = observer(function InstanceOidcAuthenticat
     <PageWrapper
       customHeader={
         <AuthenticationMethodCard
-          name="Keycloak / OIDC SSO"
-          description="Allow members to log in or sign up to one flow with Keycloak or OpenID Connect SSO."
+          name="Keycloak / OIDC SSO (Value fetched from Infisical)"
+          description="Allow members to log in or sign up to one flow with Keycloak or OpenID Connect SSO. Values are fetched directly from Infisical."
           icon={<img src={OidcLogo} height={24} width={24} alt="OIDC Logo" />}
           config={
-            <ToggleSwitch
-              value={Boolean(parseInt(enableOidcConfig))}
-              onChange={() => {
-                if (Boolean(parseInt(enableOidcConfig)) === true) {
-                  updateConfig("IS_OIDC_ENABLED", "0");
-                } else {
-                  updateConfig("IS_OIDC_ENABLED", "1");
-                }
-              }}
-              size="sm"
-              disabled={isSubmitting || !formattedConfig}
-            />
+            <div className="flex items-center gap-2">
+              <span className="text-11 text-tertiary">(Value fetched from Infisical)</span>
+              <ToggleSwitch
+                value={Boolean(parseInt(enableOidcConfig))}
+                onChange={() => {}}
+                size="sm"
+                disabled={true}
+              />
+            </div>
           }
-          disabled={isSubmitting || !formattedConfig}
+          disabled={true}
           withBorder={false}
         />
       }
@@ -105,6 +102,6 @@ const InstanceOidcAuthenticationPage = observer(function InstanceOidcAuthenticat
   );
 });
 
-export const meta: Route.MetaFunction = () => [{ title: "Keycloak / OIDC Authentication - God Mode" }];
+export const meta: Route.MetaFunction = () => [{ title: "Keycloak / OIDC Authentication (Value fetched from Infisical) - God Mode" }];
 
 export default InstanceOidcAuthenticationPage;

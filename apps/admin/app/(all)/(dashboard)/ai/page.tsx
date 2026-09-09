@@ -25,8 +25,9 @@ const InstanceAIPage = observer(function InstanceAIPage(_props: Route.ComponentP
   return (
     <PageWrapper
       header={{
-        title: "AI features for all your workspaces",
-        description: "Configure your AI API credentials so one flow AI features are turned on for all your workspaces.",
+        title: "AI features for all your workspaces (Value fetched from Infisical)",
+        description:
+          "AI credentials and model settings for OneFlow are managed centrally. (Value fetched from Infisical)",
       }}
     >
       {formattedConfig ? (

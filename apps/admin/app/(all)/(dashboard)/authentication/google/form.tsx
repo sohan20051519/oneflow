@@ -4,27 +4,21 @@
  * See the LICENSE file for details.
  */
 
-import { useState } from "react";
+import React from "react";
 import { isEmpty } from "lodash-es";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
-import { Monitor } from "lucide-react";
+import { Monitor, Lock } from "lucide-react";
 // plane internal packages
 import { API_BASE_URL } from "@plane/constants";
 import { Button, getButtonStyling } from "@plane/propel/button";
-import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { IFormattedInstanceConfiguration, TInstanceGoogleAuthenticationConfigurationKeys } from "@plane/types";
 // components
-import { CodeBlock } from "@/components/common/code-block";
-import { ConfirmDiscardModal } from "@/components/common/confirm-discard-modal";
 import type { TControllerInputFormField } from "@/components/common/controller-input";
-import type { TControllerSwitchFormField } from "@/components/common/controller-switch";
-import { ControllerSwitch } from "@/components/common/controller-switch";
 import { ControllerInput } from "@/components/common/controller-input";
 import type { TCopyField } from "@/components/common/copy-field";
 import { CopyField } from "@/components/common/copy-field";
-// hooks
-import { useInstance } from "@/hooks/store";
+import { InfisicalBadgeBanner } from "@/components/common/infisical-badge-banner";
 
 type Props = {
   config: IFormattedInstanceConfiguration;
@@ -32,28 +26,13 @@ type Props = {
 
 type GoogleConfigFormValues = Record<TInstanceGoogleAuthenticationConfigurationKeys, string>;
 
-const GOOGLE_FORM_SWITCH_FIELD: TControllerSwitchFormField<GoogleConfigFormValues> = {
-  name: "ENABLE_GOOGLE_SYNC",
-  label: "Google",
-};
-
-export function InstanceGoogleConfigForm(props: Props) {
-  const { config } = props;
-  // states
-  const [isDiscardChangesModalOpen, setIsDiscardChangesModalOpen] = useState(false);
-  // store hooks
-  const { updateInstanceConfigurations } = useInstance();
+export function InstanceGoogleConfigForm(_props: Props) {
   // form data
-  const {
-    handleSubmit,
-    control,
-    reset,
-    formState: { errors, isDirty, isSubmitting },
-  } = useForm<GoogleConfigFormValues>({
+  const { control } = useForm<GoogleConfigFormValues>({
     defaultValues: {
-      GOOGLE_CLIENT_ID: config["GOOGLE_CLIENT_ID"],
-      GOOGLE_CLIENT_SECRET: config["GOOGLE_CLIENT_SECRET"],
-      ENABLE_GOOGLE_SYNC: config["ENABLE_GOOGLE_SYNC"] || "0",
+      GOOGLE_CLIENT_ID: "",
+      GOOGLE_CLIENT_SECRET: "",
+      ENABLE_GOOGLE_SYNC: "0",
     },
   });
 
@@ -63,46 +42,24 @@ export function InstanceGoogleConfigForm(props: Props) {
     {
       key: "GOOGLE_CLIENT_ID",
       type: "text",
-      label: "Client ID",
-      description: (
-        <>
-          Your client ID lives in your Google API Console.{" "}
-          <a
-            href="https://developers.google.com/identity/protocols/oauth2/javascript-implicit-flow#creatingcred"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-            aria-label="Google OAuth client ID documentation"
-          >
-            Learn more
-          </a>
-        </>
-      ),
-      placeholder: "840195096245-0p2tstej9j5nc4l8o1ah2dqondscqc1g.apps.googleusercontent.com",
-      error: Boolean(errors.GOOGLE_CLIENT_ID),
-      required: true,
+      label: "Client ID (Value fetched from Infisical)",
+      description: "Google OAuth client ID configured in Infisical.",
+      placeholder: "GOOGLE_CLIENT_ID (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
     {
       key: "GOOGLE_CLIENT_SECRET",
       type: "password",
-      label: "Client secret",
-      description: (
-        <>
-          Your client secret should also be in your Google API Console.{" "}
-          <a
-            href="https://developers.google.com/identity/oauth2/web/guides/get-google-api-clientid"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-            aria-label="Google OAuth client secret documentation"
-          >
-            Learn more
-          </a>
-        </>
-      ),
-      placeholder: "GOCShX-ADp4cI0kPqav1gGCBg5bE02E",
-      error: Boolean(errors.GOOGLE_CLIENT_SECRET),
-      required: true,
+      label: "Client secret (Value fetched from Infisical)",
+      description: "Google OAuth client secret managed securely in Infisical.",
+      placeholder: "GOOGLE_CLIENT_SECRET (Value fetched from Infisical)",
+      error: false,
+      required: false,
+      disabled: true,
+      readOnly: true,
     },
   ];
 
@@ -113,17 +70,7 @@ export function InstanceGoogleConfigForm(props: Props) {
       url: originURL,
       description: (
         <p>
-          We will auto-generate this. Paste this into your{" "}
-          <CodeBlock darkerShade>Authorized JavaScript origins</CodeBlock> field. For this OAuth client{" "}
-          <a
-            href="https://console.cloud.google.com/apis/credentials/oauthclient"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-            aria-label="Google Cloud Console OAuth client credentials"
-          >
-            here.
-          </a>
+          We will auto-generate this. Add this to <span className="font-semibold">Authorized JavaScript origins</span> in your Google API Console.
         </p>
       ),
     },
@@ -131,65 +78,27 @@ export function InstanceGoogleConfigForm(props: Props) {
 
   const GOOGLE_SERVICE_DETAILS: TCopyField[] = [
     {
-      key: "Callback_URI",
-      label: "Callback URI",
+      key: "Authorized_redirect_URI",
+      label: "Authorized redirect URL",
       url: `${originURL}/auth/google/callback/`,
       description: (
         <p>
-          We will auto-generate this. Paste this into your <CodeBlock darkerShade>Authorized Redirect URI</CodeBlock>{" "}
-          field. For this OAuth client{" "}
-          <a
-            href="https://console.cloud.google.com/apis/credentials/oauthclient"
-            target="_blank"
-            className="text-accent-primary hover:underline"
-            rel="noreferrer"
-            aria-label="Google Cloud Console OAuth client credentials"
-          >
-            here.
-          </a>
+          Add this to <span className="font-semibold">Authorized redirect URIs</span> in your Google API Console.
         </p>
       ),
     },
   ];
 
-  const onSubmit = async (formData: GoogleConfigFormValues) => {
-    const payload: Partial<GoogleConfigFormValues> = { ...formData };
-
-    try {
-      const response = await updateInstanceConfigurations(payload);
-      setToast({
-        type: TOAST_TYPE.SUCCESS,
-        title: "Done!",
-        message: "Your Google authentication is configured. You should test it now.",
-      });
-      reset({
-        GOOGLE_CLIENT_ID: response.find((item) => item.key === "GOOGLE_CLIENT_ID")?.value,
-        GOOGLE_CLIENT_SECRET: response.find((item) => item.key === "GOOGLE_CLIENT_SECRET")?.value,
-        ENABLE_GOOGLE_SYNC: response.find((item) => item.key === "ENABLE_GOOGLE_SYNC")?.value,
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleGoBack = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
-    if (isDirty) {
-      e.preventDefault();
-      setIsDiscardChangesModalOpen(true);
-    }
-  };
-
   return (
     <>
-      <ConfirmDiscardModal
-        isOpen={isDiscardChangesModalOpen}
-        onDiscardHref="/authentication"
-        handleClose={() => setIsDiscardChangesModalOpen(false)}
-      />
       <div className="flex flex-col gap-8">
+        <InfisicalBadgeBanner pageName="Google Authentication" />
+
         <div className="grid w-full grid-cols-2 gap-x-12 gap-y-8">
           <div className="col-span-2 flex flex-col gap-y-4 pt-1 md:col-span-1">
-            <div className="pt-2.5 text-18 font-medium">Google-provided details for one flow</div>
+            <div className="pt-2.5 text-18 font-medium">
+              Google-provided details for one flow (Value fetched from Infisical)
+            </div>
             {GOOGLE_FORM_FIELDS.map((field) => (
               <ControllerInput
                 key={field.key}
@@ -201,21 +110,20 @@ export function InstanceGoogleConfigForm(props: Props) {
                 placeholder={field.placeholder}
                 error={field.error}
                 required={field.required}
+                disabled={true}
+                readOnly={true}
               />
             ))}
-            <ControllerSwitch control={control} field={GOOGLE_FORM_SWITCH_FIELD} />
             <div className="flex flex-col gap-1 pt-4">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  onClick={(e) => void handleSubmit(onSubmit)(e)}
-                  loading={isSubmitting}
-                  disabled={!isDirty}
-                >
-                  {isSubmitting ? "Saving" : "Save changes"}
+              <div className="flex flex-wrap items-center gap-4">
+                <Link href="/configuration/" className={getButtonStyling("primary", "lg")}>
+                  <Lock className="mr-2 h-4 w-4" />
+                  <span>Configure in Infisical</span>
+                </Link>
+                <Button variant="secondary" size="lg" disabled>
+                  Read-only (Value fetched from Infisical)
                 </Button>
-                <Link href="/authentication" className={getButtonStyling("secondary", "lg")} onClick={handleGoBack}>
+                <Link href="/authentication" className={getButtonStyling("secondary", "lg")}>
                   Go back
                 </Link>
               </div>

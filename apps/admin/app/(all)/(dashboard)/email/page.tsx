@@ -60,13 +60,12 @@ const InstanceEmailPage = observer(function InstanceEmailPage(_props: Route.Comp
   return (
     <PageWrapper
       header={{
-        title: "Secure emails from your own instance",
+        title: "Secure emails from your own instance (Value fetched from Infisical)",
         description: (
           <>
-            one flow can send useful emails to you and your users from your own instance without talking to the Internet.
+            SMTP email server configurations and credentials.
             <div className="text-13 font-regular text-tertiary">
-              Set it up below and please test your settings before you save them.&nbsp;
-              <span className="text-danger-primary">Misconfigs can lead to email bounces and errors.</span>
+              Values are fetched directly from Infisical into runtime. Manual edits are disabled.
             </div>
           </>
         ),
@@ -75,11 +74,14 @@ const InstanceEmailPage = observer(function InstanceEmailPage(_props: Route.Comp
             <Loader.Item width="24px" height="16px" className="rounded-full" />
           </Loader>
         ) : (
-          <ToggleSwitch value={isSMTPEnabled} onChange={handleToggle} size="sm" disabled={isSubmitting} />
+          <div className="flex items-center gap-2">
+            <span className="text-12 text-tertiary">(Value fetched from Infisical)</span>
+            <ToggleSwitch value={true} onChange={() => {}} size="sm" disabled={true} />
+          </div>
         ),
       }}
     >
-      {isSMTPEnabled && !isLoading && (
+      {!isLoading && (
         <>
           {formattedConfig ? (
             <InstanceEmailForm config={formattedConfig} />
@@ -98,6 +100,6 @@ const InstanceEmailPage = observer(function InstanceEmailPage(_props: Route.Comp
   );
 });
 
-export const meta: Route.MetaFunction = () => [{ title: "Email Settings - God Mode" }];
+export const meta: Route.MetaFunction = () => [{ title: "Email Settings (Value fetched from Infisical) - God Mode" }];
 
 export default InstanceEmailPage;
